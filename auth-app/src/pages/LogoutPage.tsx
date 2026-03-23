@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { signOut } from '../lib/supabase';
 import { validateRedirectUri } from '../lib/redirect';
@@ -6,7 +6,7 @@ import { validateRedirectUri } from '../lib/redirect';
 export function LogoutPage() {
   const [searchParams] = useSearchParams();
   const redirectUri = searchParams.get('redirect_uri');
-  const [status, setStatus] = useState('Signing out\u2026');
+  const status = 'Signing out\u2026';
 
   useEffect(() => {
     async function doLogout() {
@@ -31,7 +31,7 @@ export function LogoutPage() {
         }
       }
 
-      setStatus('You have been signed out.');
+      window.location.href = '/login';
     }
 
     doLogout();

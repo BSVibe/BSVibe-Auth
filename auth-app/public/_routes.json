@@ -1,5 +1,5 @@
 {
   "version": 1,
-  "include": ["/.well-known/*"],
-  "exclude": []
+  "include": ["/*"],
+  "exclude": ["/assets/*"]
 }

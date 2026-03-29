@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/.well-known/jwks.json",
+      "destination": "https://hobuqhkrqqhuvpxofdcc.supabase.co/auth/v1/.well-known/jwks.json"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

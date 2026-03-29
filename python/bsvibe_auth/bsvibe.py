@@ -1,7 +1,7 @@
 """BSVibe Auth provider — simplified auth using auth.bsvibe.dev.
 
 Products only need ``BSVIBE_AUTH_URL`` (default: https://auth.bsvibe.dev).
-JWKS is fetched automatically from ``{auth_url}/.well-known/jwks.json``.
+JWKS is fetched automatically from ``{auth_url}/api/jwks``.
 No Supabase-specific configuration required at the product level.
 """
 
@@ -19,7 +19,7 @@ from bsvibe_auth.provider import AuthProvider
 class BsvibeAuthProvider(AuthProvider):
     """JWT verification provider using BSVibe Auth JWKS endpoint.
 
-    Fetches public keys from ``{auth_url}/.well-known/jwks.json`` and
+    Fetches public keys from ``{auth_url}/api/jwks`` and
     verifies ES256 JWTs. No Supabase URL or JWT secret needed.
 
     Args:
@@ -34,7 +34,7 @@ class BsvibeAuthProvider(AuthProvider):
     ) -> None:
         self._auth_url = auth_url.rstrip("/")
         self._algorithms = algorithms or ["ES256"]
-        jwks_url = f"{self._auth_url}/.well-known/jwks.json"
+        jwks_url = f"{self._auth_url}/api/jwks"
         self._jwks_client = jwt.PyJWKClient(jwks_url, cache_keys=True)
 
     async def verify_token(self, token: str) -> BSVibeUser:

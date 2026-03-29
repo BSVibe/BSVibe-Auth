@@ -1,5 +1,5 @@
 // Cloudflare Pages Function: proxy JWKS from Supabase
-// Route: /.well-known/jwks.json → Supabase JWKS endpoint
+// Route: /api/jwks → Supabase JWKS endpoint
 
 interface Env {
   SUPABASE_URL: string;
@@ -15,7 +15,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   }
 
   const jwksUrl = `${supabaseUrl}/auth/v1/.well-known/jwks.json`;
-
   const response = await fetch(jwksUrl, {
     headers: { "Accept": "application/json" },
   });
@@ -28,7 +27,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   }
 
   const jwks = await response.json();
-
   return new Response(JSON.stringify(jwks), {
     status: 200,
     headers: {

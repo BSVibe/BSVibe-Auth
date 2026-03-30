@@ -1,5 +1,5 @@
 const allowedOrigins: string[] = (
-  import.meta.env.VITE_ALLOWED_REDIRECT_ORIGINS || ''
+  import.meta.env.ALLOWED_REDIRECT_ORIGINS || ''
 )
   .split(',')
   .map((o: string) => o.trim())

@@ -62,7 +62,7 @@ export class BSVibeAuth {
 
       const iframe = document.createElement('iframe');
       iframe.style.display = 'none';
-      iframe.src = `${this.authUrl}/api/silent-check`;
+      iframe.src = `${this.authUrl}/api/silent-check?origin=${encodeURIComponent(window.location.origin)}`;
 
       const cleanup = () => {
         if (settled) return;

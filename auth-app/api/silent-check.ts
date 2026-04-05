@@ -13,23 +13,45 @@ function parseCookies(cookieHeader: string): Record<string, string> {
   return cookies;
 }
 
+function getAllowedOrigins(): string[] {
+  return (process.env.ALLOWED_REDIRECT_ORIGINS || "")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+}
+
+function validateOrigin(origin: string): boolean {
+  return getAllowedOrigins().some((entry) => {
+    if (entry.endsWith(":*")) {
+      const prefix = entry.slice(0, -2);
+      return origin === prefix || origin.startsWith(prefix + ":");
+    }
+    return origin === entry;
+  });
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  const parentOrigin = (req.query.origin as string) || "*";
+  if (parentOrigin !== "*" && !validateOrigin(parentOrigin)) {
+    return sendHtml(res, { error: "login_required" }, "*");
   }
 
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    return sendHtml(res, { error: "login_required" });
+    return sendHtml(res, { error: "login_required" }, parentOrigin);
   }
 
   const cookies = parseCookies(req.headers.cookie ?? "");
   const refreshToken = cookies[COOKIE_NAME];
 
   if (!refreshToken) {
-    return sendHtml(res, { error: "login_required" });
+    return sendHtml(res, { error: "login_required" }, parentOrigin);
   }
 
   const resp = await fetch(
@@ -50,7 +72,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       "Set-Cookie",
       `${COOKIE_NAME}=; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=0`,
     );
-    return sendHtml(res, { error: "login_required" });
+    return sendHtml(res, { error: "login_required" }, parentOrigin);
   }
 
   const data = await resp.json();
@@ -65,20 +87,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     access_token: data.access_token,
     refresh_token: data.refresh_token,
     expires_in: data.expires_in,
-  });
+  }, parentOrigin);
 }
 
 function sendHtml(
   res: VercelResponse,
   payload: { error: string } | { access_token: string; refresh_token: string; expires_in: number },
+  targetOrigin: string,
 ): void {
   const message = JSON.stringify({ type: "bsvibe-auth", ...payload });
+  const escapedOrigin = JSON.stringify(targetOrigin);
   const html = `<!DOCTYPE html>
 <html>
 <head><title>BSVibe SSO</title></head>
 <body>
 <script>
-  window.parent.postMessage(${message}, '*');
+  window.parent.postMessage(${message}, ${escapedOrigin});
 </script>
 </body>
 </html>`;

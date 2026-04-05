@@ -3,25 +3,27 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 const COOKIE_NAME = "bsvibe_session";
 const COOKIE_MAX_AGE = 30 * 24 * 60 * 60; // 30 days
 
-const ALLOWED_ORIGINS = [
-  "https://auth.bsvibe.dev",
-  "https://app.bsvibe.dev",
-  "https://admin.bsvibe.dev",
-  "https://api.bsvibe.dev",
-  "https://docs.bsvibe.dev",
-];
+function getAllowedOrigins(): string[] {
+  return (process.env.ALLOWED_REDIRECT_ORIGINS || "")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+}
 
 function getCorsOrigin(req: VercelRequest): string | null {
   const origin = req.headers.origin;
-  if (
-    origin &&
-    ALLOWED_ORIGINS.some(
-      (allowed) => origin === allowed || origin.endsWith(".bsvibe.dev"),
-    )
-  ) {
-    return origin;
-  }
-  return null;
+  if (!origin) return null;
+
+  const allowed = getAllowedOrigins();
+  const isAllowed = allowed.some((entry) => {
+    if (entry.endsWith(":*")) {
+      const prefix = entry.slice(0, -2);
+      return origin === prefix || origin.startsWith(prefix + ":");
+    }
+    return origin === entry;
+  });
+
+  return isAllowed ? origin : null;
 }
 
 function setCorsHeaders(res: VercelResponse, origin: string | null): void {

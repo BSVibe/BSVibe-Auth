@@ -23,6 +23,16 @@ export function LogoutPage() {
         }
       }
 
+      // Clear SSO session cookie
+      try {
+        await fetch('/api/session', {
+          method: 'DELETE',
+          credentials: 'same-origin',
+        });
+      } catch {
+        // Best effort — continue even if cookie clearing fails
+      }
+
       if (redirectUri) {
         const validation = validateRedirectUri(redirectUri);
         if (validation.valid) {

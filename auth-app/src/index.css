@@ -106,3 +106,20 @@ body {
   font-size: 0.875rem;
   margin-bottom: 1rem;
 }
+
+.link-text {
+  text-align: center;
+  font-size: 0.875rem;
+  color: #666;
+  margin-top: 1rem;
+}
+
+.link-text a {
+  color: #111;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.link-text a:hover {
+  text-decoration: underline;
+}

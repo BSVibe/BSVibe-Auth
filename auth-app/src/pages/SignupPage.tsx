@@ -1,31 +1,42 @@
 import { useState, useMemo } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { signInWithPassword } from '../lib/supabase';
+import { signUp } from '../lib/supabase';
 import { validateRedirectUri, buildCallbackUrl } from '../lib/redirect';
 
-export function LoginPage() {
+export function SignupPage() {
   const [searchParams] = useSearchParams();
   const redirectUri = searchParams.get('redirect_uri');
   const state = searchParams.get('state');
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const validation = useMemo(() => validateRedirectUri(redirectUri), [redirectUri]);
 
-  const signupLink = `/signup${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
+  const loginLink = `/login${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
 
-  async function handleSubmit(e: React.SubmitEvent<HTMLFormElement>) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!validation.valid || !redirectUri) return;
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters');
+      return;
+    }
 
     setError('');
     setLoading(true);
 
     try {
-      const result = await signInWithPassword(email, password);
+      const result = await signUp(email, password);
 
       // Set session cookie for SSO
       try {
@@ -36,7 +47,7 @@ export function LoginPage() {
           credentials: 'same-origin',
         });
       } catch {
-        // Best effort — SSO cookie is not critical for login flow
+        // Best effort — SSO cookie is not critical for signup flow
       }
 
       const callbackUrl = buildCallbackUrl(redirectUri, {
@@ -47,7 +58,7 @@ export function LoginPage() {
       });
       window.location.href = callbackUrl;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      setError(err instanceof Error ? err.message : 'Signup failed');
     } finally {
       setLoading(false);
     }
@@ -57,7 +68,7 @@ export function LoginPage() {
     <div className="container">
       <div className="card">
         <h1 className="logo">BSVibe</h1>
-        <p className="subtitle">Sign in to continue</p>
+        <p className="subtitle">Create your account</p>
 
         {!validation.valid ? (
           <div className="error-box">{validation.error}</div>
@@ -84,16 +95,30 @@ export function LoginPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Password"
+                placeholder="At least 8 characters"
                 required
+                minLength={8}
+                disabled={loading}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="confirmPassword">Confirm password</label>
+              <input
+                id="confirmPassword"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Confirm your password"
+                required
+                minLength={8}
                 disabled={loading}
               />
             </div>
             <button type="submit" className="btn" disabled={loading}>
-              {loading ? 'Signing in\u2026' : 'Sign in'}
+              {loading ? 'Creating account\u2026' : 'Create account'}
             </button>
             <p className="link-text">
-              Don't have an account? <Link to={signupLink}>Sign up</Link>
+              Already have an account? <Link to={loginLink}>Sign in</Link>
             </p>
           </form>
         )}

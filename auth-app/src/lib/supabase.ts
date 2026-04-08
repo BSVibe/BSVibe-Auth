@@ -62,6 +62,23 @@ export async function signUp(
   return res.json();
 }
 
+export function signInWithOAuth(
+  provider: 'google',
+  opts: { redirectUri: string; state?: string }
+): void {
+  const callbackUrl = new URL('/callback', window.location.origin);
+  callbackUrl.searchParams.set('redirect_uri', opts.redirectUri);
+  if (opts.state) {
+    callbackUrl.searchParams.set('state', opts.state);
+  }
+
+  const authorizeUrl = new URL(`${SUPABASE_URL}/auth/v1/authorize`);
+  authorizeUrl.searchParams.set('provider', provider);
+  authorizeUrl.searchParams.set('redirect_to', callbackUrl.toString());
+
+  window.location.href = authorizeUrl.toString();
+}
+
 export async function signOut(accessToken: string): Promise<void> {
   await fetch(`${SUPABASE_URL}/auth/v1/logout`, {
     method: 'POST',

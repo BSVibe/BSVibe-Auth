@@ -44,22 +44,33 @@ describe('CallbackPage', () => {
     expect(screen.getByText(/User denied access/)).toBeInTheDocument();
   });
 
-  it('shows error when redirect_uri is missing', () => {
+  it('redirects to default when redirect_uri is missing (shared cookie flow)', async () => {
     renderWithRouter(
       '',
       '#access_token=tok&refresh_token=ref&expires_in=3600'
     );
 
-    expect(screen.getByText(/Missing redirect_uri/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('/api/session', expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ refresh_token: 'ref' }),
+      }));
+    });
+
+    await waitFor(() => {
+      expect(window.location.href).toBe('https://bsvibe.dev/account');
+    });
   });
 
-  it('shows error when redirect_uri is not allowed', () => {
+  it('shows error when redirect_uri is not allowed', async () => {
     renderWithRouter(
       '?redirect_uri=https://evil.com/callback',
       '#access_token=tok&refresh_token=ref&expires_in=3600'
     );
 
-    expect(screen.getByText(/not allowed/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/not allowed/i)).toBeInTheDocument();
+    });
   });
 
   it('sets SSO cookie and redirects on valid tokens', async () => {

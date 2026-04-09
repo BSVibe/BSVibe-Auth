@@ -80,28 +80,21 @@ test.describe('CallbackPage', () => {
       route.fulfill({ status: 200, body: '{"ok":true}' })
     );
 
-    // Intercept window.location.href assignment to capture redirect URL
-    // (cross-origin navigations can't be caught by page.route)
+    // Intercept window.location.href assignment to capture redirect URL.
+    // Cross-origin window.location.href navigations bypass page.route,
+    // so we spy on the href setter to capture the target URL.
     await page.addInitScript(() => {
-      (window as any).__redirectedTo = '';
-      const origDesc = Object.getOwnPropertyDescriptor(window, 'location');
-      let currentHref = '';
-      Object.defineProperty(window, 'location', {
-        get() { return origDesc?.get?.call(window); },
-        set(val) {
-          (window as any).__redirectedTo = val;
-        },
-        configurable: true,
-      });
-      // Also capture href assignment
-      const origLocation = window.location;
-      const origHrefDesc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(origLocation), 'href');
-      if (origHrefDesc) {
-        Object.defineProperty(origLocation, 'href', {
+      const loc = window.location;
+      const desc = Object.getOwnPropertyDescriptor(
+        Object.getPrototypeOf(loc),
+        'href',
+      );
+      if (desc) {
+        Object.defineProperty(loc, 'href', {
           set(val: string) {
-            (window as any).__redirectedTo = val;
+            document.documentElement.dataset.redirectedTo = val;
           },
-          get() { return origHrefDesc.get?.call(origLocation); },
+          get() { return desc.get?.call(loc) ?? ''; },
           configurable: true,
         });
       }
@@ -111,13 +104,15 @@ test.describe('CallbackPage', () => {
       `/callback?redirect_uri=${encodeURIComponent(REDIRECT)}&state=s1#access_token=tok&refresh_token=ref&expires_in=3600`
     );
 
-    // Wait for redirect to be captured
+    // Wait for redirect to be captured via the dataset spy
     await expect.poll(
-      () => page.evaluate(() => (window as any).__redirectedTo),
+      () => page.evaluate(() => document.documentElement.dataset.redirectedTo),
       { timeout: 5000 },
     ).toBeTruthy();
 
-    const redirectedTo = await page.evaluate(() => (window as any).__redirectedTo);
+    const redirectedTo = await page.evaluate(
+      () => document.documentElement.dataset.redirectedTo ?? '',
+    );
     expect(redirectedTo).toContain('example.com/cb#');
     expect(redirectedTo).toContain('access_token=tok');
     expect(redirectedTo).toContain('refresh_token=ref');

@@ -75,21 +75,52 @@ test.describe('CallbackPage', () => {
   });
 
   test('processes valid tokens and redirects to allowed URI', async ({ page }) => {
-    // Stub the SSO cookie endpoint and the final redirect destination
+    // Stub the SSO cookie endpoint
     await page.route('**/api/session', (route) =>
       route.fulfill({ status: 200, body: '{"ok":true}' })
     );
-    await page.route('http://example.com/cb*', (route) =>
-      route.fulfill({ status: 200, contentType: 'text/html', body: '<html><body>landed</body></html>' })
-    );
+
+    // Intercept window.location.href assignment to capture redirect URL
+    // (cross-origin navigations can't be caught by page.route)
+    await page.addInitScript(() => {
+      (window as any).__redirectedTo = '';
+      const origDesc = Object.getOwnPropertyDescriptor(window, 'location');
+      let currentHref = '';
+      Object.defineProperty(window, 'location', {
+        get() { return origDesc?.get?.call(window); },
+        set(val) {
+          (window as any).__redirectedTo = val;
+        },
+        configurable: true,
+      });
+      // Also capture href assignment
+      const origLocation = window.location;
+      const origHrefDesc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(origLocation), 'href');
+      if (origHrefDesc) {
+        Object.defineProperty(origLocation, 'href', {
+          set(val: string) {
+            (window as any).__redirectedTo = val;
+          },
+          get() { return origHrefDesc.get?.call(origLocation); },
+          configurable: true,
+        });
+      }
+    });
 
     await page.goto(
       `/callback?redirect_uri=${encodeURIComponent(REDIRECT)}&state=s1#access_token=tok&refresh_token=ref&expires_in=3600`
     );
 
-    await page.waitForURL(/example\.com\/cb#/);
-    expect(page.url()).toContain('access_token=tok');
-    expect(page.url()).toContain('refresh_token=ref');
-    expect(page.url()).toContain('state=s1');
+    // Wait for redirect to be captured
+    await expect.poll(
+      () => page.evaluate(() => (window as any).__redirectedTo),
+      { timeout: 5000 },
+    ).toBeTruthy();
+
+    const redirectedTo = await page.evaluate(() => (window as any).__redirectedTo);
+    expect(redirectedTo).toContain('example.com/cb#');
+    expect(redirectedTo).toContain('access_token=tok');
+    expect(redirectedTo).toContain('refresh_token=ref');
+    expect(redirectedTo).toContain('state=s1');
   });
 });

@@ -64,10 +64,12 @@ export async function signUp(
 
 export function signInWithOAuth(
   provider: 'google',
-  opts: { redirectUri: string; state?: string }
+  opts: { redirectUri?: string | null; state?: string }
 ): void {
   const callbackUrl = new URL('/callback', window.location.origin);
-  callbackUrl.searchParams.set('redirect_uri', opts.redirectUri);
+  if (opts.redirectUri) {
+    callbackUrl.searchParams.set('redirect_uri', opts.redirectUri);
+  }
   if (opts.state) {
     callbackUrl.searchParams.set('state', opts.state);
   }

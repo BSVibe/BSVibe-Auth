@@ -109,7 +109,7 @@ export function LoginPage() {
               disabled={loading}
               onClick={() => {
                 if (validation.valid) {
-                  signInWithOAuth('google', { redirectUri: effectiveRedirectUri, state: state || undefined });
+                  signInWithOAuth('google', { redirectUri, state: state || undefined });
                 }
               }}
             >

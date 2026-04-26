@@ -40,8 +40,10 @@ SSO session management.
 | Method | Path | Purpose |
 |--------|------|---------|
 | `POST` | `/api/session` | Set SSO cookie from `refresh_token` |
-| `GET` | `/api/session` | Refresh tokens from session cookie |
+| `GET` | `/api/session` | Refresh tokens + return `tenants[]` and `active_tenant_id` |
 | `DELETE` | `/api/session` | Clear session cookie |
+| `POST` | `/api/session/switch_tenant` | Set active tenant (validates membership) |
+| `POST` | `/api/service-tokens/issue` | Issue audience-scoped service JWT (admin/owner only) |
 | `POST` | `/api/refresh` | Token refresh |
 | `POST` | `/api/logout` | Invalidate Supabase session |
 | `GET` | `/api/silent-check` | SSO probe via redirect |

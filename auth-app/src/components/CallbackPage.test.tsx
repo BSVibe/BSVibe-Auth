@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
 
 vi.stubEnv('ALLOWED_REDIRECT_ORIGINS', 'https://nexus.bsvibe.dev,https://localhost:*');
 
@@ -17,8 +16,10 @@ describe('CallbackPage', () => {
     CallbackPage = mod.CallbackPage;
   });
 
-  function renderWithRouter(search: string, hash: string) {
-    // Set hash on window.location since MemoryRouter doesn't handle hash
+  function renderWithSearch(search: string, hash: string) {
+    globalThis.__setMockSearchParams(search.replace(/^\?/, ''));
+
+    // Set hash on window.location since the mock doesn't handle it.
     Object.defineProperty(window, 'location', {
       writable: true,
       value: {
@@ -28,33 +29,32 @@ describe('CallbackPage', () => {
       },
     });
 
-    return render(
-      <MemoryRouter initialEntries={[`/callback${search}`]}>
-        <CallbackPage />
-      </MemoryRouter>
-    );
+    return render(<CallbackPage />);
   }
 
   it('shows error when hash contains error', () => {
-    renderWithRouter(
+    renderWithSearch(
       '?redirect_uri=https://nexus.bsvibe.dev/callback',
-      '#error=access_denied&error_description=User+denied+access'
+      '#error=access_denied&error_description=User+denied+access',
     );
 
     expect(screen.getByText(/User denied access/)).toBeInTheDocument();
   });
 
   it('redirects to default when redirect_uri is missing (shared cookie flow)', async () => {
-    renderWithRouter(
+    renderWithSearch(
       '',
-      '#access_token=tok&refresh_token=ref&expires_in=3600'
+      '#access_token=tok&refresh_token=ref&expires_in=3600',
     );
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith('/api/session', expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({ refresh_token: 'ref' }),
-      }));
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/session',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ refresh_token: 'ref' }),
+        }),
+      );
     });
 
     await waitFor(() => {
@@ -63,9 +63,9 @@ describe('CallbackPage', () => {
   });
 
   it('shows error when redirect_uri is not allowed', async () => {
-    renderWithRouter(
+    renderWithSearch(
       '?redirect_uri=https://evil.com/callback',
-      '#access_token=tok&refresh_token=ref&expires_in=3600'
+      '#access_token=tok&refresh_token=ref&expires_in=3600',
     );
 
     await waitFor(() => {
@@ -84,31 +84,32 @@ describe('CallbackPage', () => {
         assign: assignMock,
       },
     });
-
-    render(
-      <MemoryRouter initialEntries={['/callback?redirect_uri=https://nexus.bsvibe.dev/callback&state=s1']}>
-        <CallbackPage />
-      </MemoryRouter>
+    globalThis.__setMockSearchParams(
+      'redirect_uri=https://nexus.bsvibe.dev/callback&state=s1',
     );
 
+    render(<CallbackPage />);
+
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith('/api/session', expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({ refresh_token: 'ref' }),
-      }));
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/session',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ refresh_token: 'ref' }),
+        }),
+      );
     });
 
     await waitFor(() => {
-      // Should redirect to callback URL with tokens in hash
       expect(window.location.href).toContain('nexus.bsvibe.dev/callback#');
       expect(window.location.href).toContain('access_token=tok');
     });
   });
 
   it('shows processing state', () => {
-    renderWithRouter(
+    renderWithSearch(
       '?redirect_uri=https://nexus.bsvibe.dev/callback',
-      '#access_token=tok&refresh_token=ref&expires_in=3600'
+      '#access_token=tok&refresh_token=ref&expires_in=3600',
     );
 
     expect(screen.getByText('BSVibe')).toBeInTheDocument();

@@ -1,5 +1,17 @@
-const SUPABASE_URL = import.meta.env.SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.SUPABASE_ANON_KEY;
+/**
+ * Supabase client wrappers — used by client components.
+ *
+ * Phase Z: env vars migrated from Vite (`import.meta.env.SUPABASE_*`) to
+ * Next.js (`process.env.NEXT_PUBLIC_SUPABASE_*`). Next inlines NEXT_PUBLIC_*
+ * at build time, so the values are baked into the client bundle.
+ *
+ * Vitest stubs `process.env.SUPABASE_URL` / `SUPABASE_ANON_KEY` directly via
+ * `vi.stubEnv()`, so we accept either prefix at module init.
+ */
+const SUPABASE_URL =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL ?? '';
+const SUPABASE_ANON_KEY =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY ?? '';
 
 interface AuthResponse {
   access_token: string;

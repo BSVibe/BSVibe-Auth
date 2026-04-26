@@ -5,7 +5,7 @@
  * can be exercised without booting a real Vercel runtime.
  */
 
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+import type { VercelRequest, VercelResponse } from "./types";
 
 export interface CapturedResponse {
   statusCode: number;

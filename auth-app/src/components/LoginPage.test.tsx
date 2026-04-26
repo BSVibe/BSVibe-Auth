@@ -1,31 +1,28 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
 
 vi.stubEnv('SUPABASE_URL', 'https://test.supabase.co');
 vi.stubEnv('SUPABASE_ANON_KEY', 'test-anon-key');
 vi.stubEnv('ALLOWED_REDIRECT_ORIGINS', 'https://nexus.bsvibe.dev');
 
 describe('LoginPage - Google OAuth button', () => {
+  beforeEach(() => {
+    globalThis.__setMockSearchParams(
+      'redirect_uri=https://nexus.bsvibe.dev/callback',
+    );
+  });
+
   it('renders Google sign-in button', async () => {
     const { LoginPage } = await import('./LoginPage');
-    render(
-      <MemoryRouter initialEntries={['/login?redirect_uri=https://nexus.bsvibe.dev/callback']}>
-        <LoginPage />
-      </MemoryRouter>
-    );
+    render(<LoginPage />);
 
     expect(screen.getByText(/Continue with Google/i)).toBeInTheDocument();
   });
 
   it('renders divider between email form and Google button', async () => {
     const { LoginPage } = await import('./LoginPage');
-    render(
-      <MemoryRouter initialEntries={['/login?redirect_uri=https://nexus.bsvibe.dev/callback']}>
-        <LoginPage />
-      </MemoryRouter>
-    );
+    render(<LoginPage />);
 
     expect(screen.getByText('or')).toBeInTheDocument();
   });
@@ -40,11 +37,7 @@ describe('LoginPage - Google OAuth button', () => {
     });
 
     const { LoginPage } = await import('./LoginPage');
-    render(
-      <MemoryRouter initialEntries={['/login?redirect_uri=https://nexus.bsvibe.dev/callback']}>
-        <LoginPage />
-      </MemoryRouter>
-    );
+    render(<LoginPage />);
 
     const googleBtn = screen.getByText(/Continue with Google/i);
     await user.click(googleBtn);

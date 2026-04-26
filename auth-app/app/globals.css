@@ -1,3 +1,13 @@
+/**
+ * BSVibe-Auth global styles.
+ *
+ * Tailwind 4 is wired up via PostCSS (postcss.config.mjs) and imported here.
+ * The Phase 0 UI predates utility-first Tailwind use and ships with hand-rolled
+ * dark-theme CSS — keeping these classes lets the existing JSX render
+ * unchanged. New screens should prefer Tailwind utilities.
+ */
+@import "tailwindcss";
+
 :root {
   /* Accent — BSVibe Brand (Indigo) */
   --color-accent: 99 102 241;

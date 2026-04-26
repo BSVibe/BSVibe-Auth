@@ -1,5 +1,14 @@
+/**
+ * redirect_uri allow-list validation — used by client components.
+ *
+ * Phase Z: env var migrated from `import.meta.env.ALLOWED_REDIRECT_ORIGINS`
+ * to `process.env.NEXT_PUBLIC_ALLOWED_REDIRECT_ORIGINS`. Vitest also writes to
+ * `process.env.ALLOWED_REDIRECT_ORIGINS`, so we accept either name.
+ */
 const allowedOrigins: string[] = (
-  import.meta.env.ALLOWED_REDIRECT_ORIGINS || ''
+  process.env.NEXT_PUBLIC_ALLOWED_REDIRECT_ORIGINS ??
+  process.env.ALLOWED_REDIRECT_ORIGINS ??
+  ''
 )
   .split(',')
   .map((o: string) => o.trim())

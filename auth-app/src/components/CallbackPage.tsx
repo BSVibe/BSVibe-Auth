@@ -1,11 +1,14 @@
+'use client';
+
 import { useEffect, useState } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { validateRedirectUri, buildCallbackUrl } from '../lib/redirect';
 
 export function CallbackPage() {
-  const [searchParams] = useSearchParams();
-  const redirectUri = searchParams.get('redirect_uri');
-  const state = searchParams.get('state');
+  const searchParams = useSearchParams();
+  const redirectUri = searchParams?.get('redirect_uri') ?? null;
+  const state = searchParams?.get('state') ?? null;
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -79,7 +82,8 @@ export function CallbackPage() {
     handleCallback();
   }, [redirectUri, state]);
 
-  const loginLink = `/login${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
+  const queryString = searchParams?.toString() ?? '';
+  const loginLink = `/login${queryString ? `?${queryString}` : ''}`;
 
   return (
     <div className="container">
@@ -89,7 +93,7 @@ export function CallbackPage() {
           <>
             <div className="error-box">{error}</div>
             <p className="link-text">
-              <Link to={loginLink}>Back to sign in</Link>
+              <Link href={loginLink}>Back to sign in</Link>
             </p>
           </>
         ) : (

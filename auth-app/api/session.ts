@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+import type { VercelRequest, VercelResponse } from "./_lib/types";
 import {
   listTenantsForUser as listTenantsForUserImpl,
   pickActiveTenant,
@@ -85,7 +85,10 @@ export function createSessionHandler(deps: SessionHandlerDeps = {}) {
   const listTenants = deps.listTenantsForUser ?? listTenantsForUserImpl;
   const fetchImpl = deps.fetchImpl ?? fetch;
 
-  return async function handler(req: VercelRequest, res: VercelResponse) {
+  return async function handler(
+    req: VercelRequest,
+    res: VercelResponse,
+  ): Promise<VercelResponse | void> {
     const corsOrigin = getCorsOrigin(req);
     setCorsHeaders(res, corsOrigin);
 
@@ -103,7 +106,7 @@ export function createSessionHandler(deps: SessionHandlerDeps = {}) {
 
     // POST — set session cookie with refresh_token
     if (req.method === "POST") {
-      const { refresh_token } = req.body ?? {};
+      const { refresh_token } = (req.body ?? {}) as { refresh_token?: string };
       if (!refresh_token) {
         return res.status(400).json({ error: "refresh_token is required" });
       }

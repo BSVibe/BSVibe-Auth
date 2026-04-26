@@ -1,16 +1,20 @@
+'use client';
+
 import { useState, useMemo } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
-import { signInWithPassword, signInWithOAuth } from '../lib/supabase';
+import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { signUp, signInWithOAuth } from '../lib/supabase';
 import { validateRedirectUri, buildCallbackUrl } from '../lib/redirect';
 
-export function LoginPage() {
-  const [searchParams] = useSearchParams();
-  const redirectUri = searchParams.get('redirect_uri');
-  const state = searchParams.get('state');
+export function SignupPage() {
+  const searchParams = useSearchParams();
+  const redirectUri = searchParams?.get('redirect_uri') ?? null;
+  const state = searchParams?.get('state') ?? null;
   const effectiveRedirectUri = redirectUri || 'https://bsvibe.dev/account';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -19,17 +23,28 @@ export function LoginPage() {
     [redirectUri],
   );
 
-  const signupLink = `/signup${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
+  const queryString = searchParams?.toString() ?? '';
+  const loginLink = `/login${queryString ? `?${queryString}` : ''}`;
 
-  async function handleSubmit(e: React.SubmitEvent<HTMLFormElement>) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!validation.valid) return;
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters');
+      return;
+    }
 
     setError('');
     setLoading(true);
 
     try {
-      const result = await signInWithPassword(email, password);
+      const result = await signUp(email, password);
 
       // Set session cookie for SSO
       try {
@@ -40,11 +55,10 @@ export function LoginPage() {
           credentials: 'same-origin',
         });
       } catch {
-        // Best effort — SSO cookie is not critical for login flow
+        // Best effort — SSO cookie is not critical for signup flow
       }
 
       if (redirectUri) {
-        // Legacy: product has its own callback, send tokens in hash
         const callbackUrl = buildCallbackUrl(redirectUri, {
           access_token: result.access_token,
           refresh_token: result.refresh_token,
@@ -53,11 +67,10 @@ export function LoginPage() {
         });
         window.location.href = callbackUrl;
       } else {
-        // Shared cookie is set, just redirect
         window.location.href = effectiveRedirectUri;
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      setError(err instanceof Error ? err.message : 'Signup failed');
     } finally {
       setLoading(false);
     }
@@ -67,7 +80,7 @@ export function LoginPage() {
     <div className="container">
       <div className="card">
         <h1 className="logo">BSVibe</h1>
-        <p className="subtitle">Sign in to continue</p>
+        <p className="subtitle">Create your account</p>
 
         {!validation.valid ? (
           <div className="error-box">{validation.error}</div>
@@ -94,13 +107,27 @@ export function LoginPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Password"
+                placeholder="At least 8 characters"
                 required
+                minLength={8}
+                disabled={loading}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="confirmPassword">Confirm password</label>
+              <input
+                id="confirmPassword"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Confirm your password"
+                required
+                minLength={8}
                 disabled={loading}
               />
             </div>
             <button type="submit" className="btn" disabled={loading}>
-              {loading ? 'Signing in\u2026' : 'Sign in'}
+              {loading ? 'Creating account\u2026' : 'Create account'}
             </button>
             <div className="divider"><span>or</span></div>
             <button
@@ -119,10 +146,10 @@ export function LoginPage() {
                 <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
                 <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
               </svg>
-              Continue with Google
+              Sign up with Google
             </button>
             <p className="link-text">
-              Don't have an account? <Link to={signupLink}>Sign up</Link>
+              Already have an account? <Link href={loginLink}>Sign in</Link>
             </p>
           </form>
         )}

@@ -35,16 +35,21 @@ export function LoginPage() {
     try {
       const result = await signInWithPassword(email, password);
 
-      // Set session cookie for SSO
+      // Set session cookie for SSO + emit auth.session.started
       try {
         await fetch('/api/session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refresh_token: result.refresh_token }),
+          body: JSON.stringify({
+            refresh_token: result.refresh_token,
+            event: 'login_success',
+            user_id: result.user.id,
+            email: result.user.email,
+          }),
           credentials: 'same-origin',
         });
       } catch {
-        // Best effort — SSO cookie is not critical for login flow
+        // Best effort — SSO cookie / audit emit are not critical for login flow
       }
 
       if (redirectUri) {
@@ -61,7 +66,23 @@ export function LoginPage() {
         window.location.href = effectiveRedirectUri;
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      const reason = err instanceof Error ? err.message : 'Login failed';
+      // Best-effort emit of auth.session.failed; never block UI on it.
+      try {
+        await fetch('/api/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            event: 'login_failed',
+            email,
+            reason,
+          }),
+          credentials: 'same-origin',
+        });
+      } catch {
+        // Swallow — audit emit must not surface to user.
+      }
+      setError(reason);
     } finally {
       setLoading(false);
     }

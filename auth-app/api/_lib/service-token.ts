@@ -17,6 +17,7 @@ export const SERVICE_AUDIENCES = [
   "bsgateway",
   "bsupervisor",
   "bsnexus",
+  "bsvibe-auth",
 ] as const;
 
 export type ServiceAudience = (typeof SERVICE_AUDIENCES)[number];

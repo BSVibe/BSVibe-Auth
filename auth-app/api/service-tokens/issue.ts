@@ -9,6 +9,16 @@ import {
   ServiceTokenError,
   type ServiceAudience,
 } from "../_lib/service-token";
+import {
+  emitAuditEventBestEffort,
+  type AuditEmitInput,
+  type AuditEmitResult,
+} from "../_lib/audit-emit";
+
+export type EmitAuditFn = (
+  cfg: { url: string; serviceRoleKey: string },
+  input: AuditEmitInput,
+) => Promise<AuditEmitResult>;
 
 export interface IssueServiceTokenHandlerDeps {
   getMembership?: (
@@ -18,6 +28,7 @@ export interface IssueServiceTokenHandlerDeps {
     fetchImpl?: typeof fetch,
   ) => Promise<TenantRole | null>;
   fetchImpl?: typeof fetch;
+  emitAudit?: EmitAuditFn;
 }
 
 interface AccessTokenPayload {
@@ -46,6 +57,10 @@ export function createIssueServiceTokenHandler(
 ) {
   const getMembership = deps.getMembership ?? getMembershipImpl;
   const fetchImpl = deps.fetchImpl ?? fetch;
+  const emitAudit: EmitAuditFn =
+    deps.emitAudit ??
+    ((cfg, input) =>
+      emitAuditEventBestEffort(cfg, input, { fetchImpl }));
 
   return async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === "OPTIONS") {
@@ -128,6 +143,20 @@ export function createIssueServiceTokenHandler(
           ttlSeconds: body.ttl_s as number | undefined,
         },
         { signingSecret, issuer },
+      );
+      // Emit authz.service_token.issued (best-effort, fire-and-forget).
+      await emitAudit(
+        { url: supabaseUrl, serviceRoleKey },
+        {
+          eventType: "authz.service_token.issued",
+          tenantId: body.tenant_id,
+          actor: { type: "user", id: userId },
+          data: {
+            audience: result.payload.aud,
+            scope: result.payload.scope.split(" ").filter(Boolean),
+            ttl_s: result.expires_in,
+          },
+        },
       );
       return res.status(200).json({
         access_token: result.access_token,

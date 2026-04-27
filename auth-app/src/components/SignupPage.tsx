@@ -46,16 +46,21 @@ export function SignupPage() {
     try {
       const result = await signUp(email, password);
 
-      // Set session cookie for SSO
+      // Set session cookie for SSO + emit auth.user.created
       try {
         await fetch('/api/session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refresh_token: result.refresh_token }),
+          body: JSON.stringify({
+            refresh_token: result.refresh_token,
+            event: 'signup_success',
+            user_id: result.user.id,
+            email: result.user.email,
+          }),
           credentials: 'same-origin',
         });
       } catch {
-        // Best effort — SSO cookie is not critical for signup flow
+        // Best effort — SSO cookie / audit emit are not critical for signup flow
       }
 
       if (redirectUri) {

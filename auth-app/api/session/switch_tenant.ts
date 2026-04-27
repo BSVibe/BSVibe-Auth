@@ -4,10 +4,20 @@ import {
   type SupabaseConfig,
   type TenantRole,
 } from "../_lib/tenants";
+import {
+  emitAuditEventBestEffort,
+  type AuditEmitInput,
+  type AuditEmitResult,
+} from "../_lib/audit-emit";
 
 const ACTIVE_TENANT_COOKIE = "bsvibe_active_tenant";
 const COOKIE_DOMAIN = ".bsvibe.dev";
 const COOKIE_MAX_AGE = 30 * 24 * 60 * 60; // 30 days
+
+export type EmitAuditFn = (
+  cfg: { url: string; serviceRoleKey: string },
+  input: AuditEmitInput,
+) => Promise<AuditEmitResult>;
 
 export interface SwitchTenantHandlerDeps {
   getMembership?: (
@@ -17,6 +27,7 @@ export interface SwitchTenantHandlerDeps {
     fetchImpl?: typeof fetch,
   ) => Promise<TenantRole | null>;
   fetchImpl?: typeof fetch;
+  emitAudit?: EmitAuditFn;
 }
 
 interface AccessTokenPayload {
@@ -43,6 +54,10 @@ export function createSwitchTenantHandler(
 ) {
   const getMembership = deps.getMembership ?? getMembershipImpl;
   const fetchImpl = deps.fetchImpl ?? fetch;
+  const emitAudit: EmitAuditFn =
+    deps.emitAudit ??
+    ((cfg, input) =>
+      emitAuditEventBestEffort(cfg, input, { fetchImpl }));
 
   return async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === "OPTIONS") {
@@ -97,6 +112,17 @@ export function createSwitchTenantHandler(
     res.setHeader(
       "Set-Cookie",
       `${ACTIVE_TENANT_COOKIE}=${tenant_id}; HttpOnly; Secure; SameSite=Lax; Domain=${COOKIE_DOMAIN}; Path=/; Max-Age=${COOKIE_MAX_AGE}`,
+    );
+
+    // Emit auth.tenant.switched (best-effort).
+    await emitAudit(
+      { url: supabaseUrl, serviceRoleKey },
+      {
+        eventType: "auth.tenant.switched",
+        tenantId: tenant_id,
+        actor: { type: "user", id: userId },
+        data: { to_tenant_id: tenant_id, role },
+      },
     );
 
     return res.status(200).json({ active_tenant_id: tenant_id, role });

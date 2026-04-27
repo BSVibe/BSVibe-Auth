@@ -5,11 +5,21 @@ import {
   type SupabaseConfig,
   type Tenant,
 } from "./_lib/tenants";
+import {
+  emitAuditEventBestEffort,
+  type AuditEmitInput,
+  type AuditEmitResult,
+} from "./_lib/audit-emit";
 
 const COOKIE_NAME = "bsvibe_session";
 const ACTIVE_TENANT_COOKIE = "bsvibe_active_tenant";
 const COOKIE_MAX_AGE = 30 * 24 * 60 * 60; // 30 days
 const COOKIE_DOMAIN = ".bsvibe.dev"; // shared across *.bsvibe.dev
+
+export type EmitAuditFn = (
+  cfg: { url: string; serviceRoleKey: string },
+  input: AuditEmitInput,
+) => Promise<AuditEmitResult>;
 
 export interface SessionHandlerDeps {
   listTenantsForUser?: (
@@ -18,6 +28,7 @@ export interface SessionHandlerDeps {
     fetchImpl?: typeof fetch,
   ) => Promise<Tenant[]>;
   fetchImpl?: typeof fetch;
+  emitAudit?: EmitAuditFn;
 }
 
 function getAllowedOrigins(): string[] {
@@ -84,6 +95,10 @@ function decodeAccessTokenPayload(token: string): AccessTokenPayload | null {
 export function createSessionHandler(deps: SessionHandlerDeps = {}) {
   const listTenants = deps.listTenantsForUser ?? listTenantsForUserImpl;
   const fetchImpl = deps.fetchImpl ?? fetch;
+  const emitAudit: EmitAuditFn =
+    deps.emitAudit ??
+    ((cfg, input) =>
+      emitAuditEventBestEffort(cfg, input, { fetchImpl }));
 
   return async function handler(
     req: VercelRequest,
@@ -104,9 +119,44 @@ export function createSessionHandler(deps: SessionHandlerDeps = {}) {
       return res.status(500).json({ error: "Auth service not configured" });
     }
 
-    // POST — set session cookie with refresh_token
+    // POST — set session cookie with refresh_token, optionally emit auth.* event
     if (req.method === "POST") {
-      const { refresh_token } = (req.body ?? {}) as { refresh_token?: string };
+      const postBody = (req.body ?? {}) as {
+        refresh_token?: string;
+        event?: string;
+        email?: string;
+        reason?: string;
+      };
+
+      // Failure path — no refresh_token, but we still emit auth.session.failed.
+      // Tenant context is unknown for a failed login, so we use a sentinel.
+      if (postBody.event === "login_failed") {
+        if (serviceRoleKey) {
+          // Failed-login emit uses the system actor; no tenant_id is known
+          // (auth fails before the user is identified). The audit_events
+          // schema requires tenant_id, so we use the all-zero UUID as a
+          // sentinel that downstream queries can filter for.
+          await emitAudit(
+            { url: supabaseUrl, serviceRoleKey },
+            {
+              eventType: "auth.session.failed",
+              tenantId: "00000000-0000-0000-0000-000000000000",
+              actor: { type: "system", id: "auth-app" },
+              data: {
+                email:
+                  typeof postBody.email === "string" ? postBody.email : null,
+                reason:
+                  typeof postBody.reason === "string"
+                    ? postBody.reason
+                    : "unknown",
+              },
+            },
+          );
+        }
+        return res.status(204).end();
+      }
+
+      const refresh_token = postBody.refresh_token;
       if (!refresh_token) {
         return res.status(400).json({ error: "refresh_token is required" });
       }
@@ -115,6 +165,39 @@ export function createSessionHandler(deps: SessionHandlerDeps = {}) {
         "Set-Cookie",
         `${COOKIE_NAME}=${refresh_token}; HttpOnly; Secure; SameSite=Lax; Domain=${COOKIE_DOMAIN}; Path=/; Max-Age=${COOKIE_MAX_AGE}`,
       );
+
+      // Emit auth event: signup_success -> auth.user.created,
+      // login_success -> auth.session.started. Fire-and-forget; failure to
+      // emit MUST NOT break the session cookie set.
+      const userIdFromBody = (req.body as { user_id?: unknown } | null)?.user_id;
+      if (
+        (postBody.event === "signup_success" ||
+          postBody.event === "login_success") &&
+        typeof userIdFromBody === "string" &&
+        userIdFromBody.length > 0 &&
+        serviceRoleKey
+      ) {
+        const eventType =
+          postBody.event === "signup_success"
+            ? "auth.user.created"
+            : "auth.session.started";
+        await emitAudit(
+          { url: supabaseUrl, serviceRoleKey },
+          {
+            eventType,
+            tenantId: "00000000-0000-0000-0000-000000000000",
+            actor: {
+              type: "user",
+              id: userIdFromBody,
+              ...(typeof postBody.email === "string"
+                ? { email: postBody.email }
+                : {}),
+            },
+            data: { method: "password" },
+          },
+        );
+      }
+
       return res.status(200).json({ ok: true });
     }
 

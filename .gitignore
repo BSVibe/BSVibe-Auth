@@ -39,3 +39,8 @@ node_modules/
 .env.production.local
 .vercel
 js/.npmrc
+
+# OpenFGA infra
+infra/openfga/.env
+infra/openfga/.bootstrap.json
+infra/openfga/logs/

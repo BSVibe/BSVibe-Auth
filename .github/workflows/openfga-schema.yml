@@ -1,0 +1,171 @@
+name: OpenFGA Schema
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/openfga/bsvibe.fga"
+      - "infra/openfga/docker-compose.yml"
+      - "infra/openfga/scripts/**"
+      - ".github/workflows/openfga-schema.yml"
+  pull_request:
+    paths:
+      - "infra/openfga/bsvibe.fga"
+      - "infra/openfga/scripts/**"
+      - ".github/workflows/openfga-schema.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Validate the .fga DSL on every PR; on main, additionally apply the model to a
+# disposable OpenFGA instance to prove the model boots cleanly + survives a write.
+# Production application against the Mac Mini happens via launchd + the manual
+# infra/openfga/scripts/bootstrap.sh step (Auth_Design.md §10.2 — schema is
+# code-PR-only, no remote write from CI).
+
+jobs:
+  drift-guard:
+    name: Drift guard vs bsvibe-python SoT
+    runs-on: ubuntu-latest
+    # Single source of truth for the OpenFGA schema lives in bsvibe-python:
+    #   bsvibe-python/packages/bsvibe-authz/schema/bsvibe.fga
+    # This repo keeps a byte-identical copy under infra/openfga/bsvibe.fga so
+    # the Mac Mini deployment can boot without a build-time fetch.
+    # If they diverge, fail the PR and ask the author to update both.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch SoT from bsvibe-python
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/sot
+          # Public-or-internal repo: fall back to unauthenticated raw if the token
+          # cannot read it (e.g., separate org permissions).
+          URL="https://raw.githubusercontent.com/BSVibe/bsvibe-python/main/packages/bsvibe-authz/schema/bsvibe.fga"
+          if ! curl -sfL -H "Authorization: Bearer $GH_TOKEN" "$URL" -o /tmp/sot/bsvibe.fga; then
+            echo "Authenticated fetch failed, retrying anonymously..."
+            curl -sfL "$URL" -o /tmp/sot/bsvibe.fga
+          fi
+          test -s /tmp/sot/bsvibe.fga
+
+      - name: Compare SHA-256 with infra/openfga/bsvibe.fga
+        run: |
+          set -euo pipefail
+          LOCAL_SHA=$(sha256sum infra/openfga/bsvibe.fga | awk '{print $1}')
+          SOT_SHA=$(sha256sum /tmp/sot/bsvibe.fga | awk '{print $1}')
+          echo "BSVibe-Auth (local) : $LOCAL_SHA"
+          echo "bsvibe-python (SoT) : $SOT_SHA"
+          if [ "$LOCAL_SHA" != "$SOT_SHA" ]; then
+            echo "::error::OpenFGA schema drift detected — infra/openfga/bsvibe.fga differs from bsvibe-python SoT."
+            echo "Resolution:"
+            echo "  1. Edit bsvibe-python/packages/bsvibe-authz/schema/bsvibe.fga first (SoT)."
+            echo "  2. Copy the same content to BSVibe-Auth/infra/openfga/bsvibe.fga."
+            echo "  3. Coordinate the merge so both repos stay in sync."
+            echo ""
+            echo "Diff (SoT vs local):"
+            diff -u /tmp/sot/bsvibe.fga infra/openfga/bsvibe.fga || true
+            exit 1
+          fi
+          echo "OK — schemas are byte-identical."
+
+  validate:
+    name: Validate FGA DSL
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pull openfga/cli
+        run: docker pull openfga/cli:latest
+
+      - name: fga model validate
+        run: |
+          docker run --rm \
+            -v "$PWD/infra/openfga/bsvibe.fga:/schema/bsvibe.fga:ro" \
+            openfga/cli:latest model validate --file /schema/bsvibe.fga
+
+      - name: fga model transform (DSL → JSON)
+        run: |
+          docker run --rm \
+            -v "$PWD/infra/openfga/bsvibe.fga:/schema/bsvibe.fga:ro" \
+            openfga/cli:latest model transform --file /schema/bsvibe.fga --input-format=fga \
+            > /tmp/model.json
+          jq empty /tmp/model.json
+          test -s /tmp/model.json
+
+  smoke-apply:
+    name: Smoke-apply against disposable OpenFGA
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [drift-guard, validate]
+    runs-on: ubuntu-latest
+
+    services:
+      openfga-postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: openfga
+          POSTGRES_USER: openfga
+          POSTGRES_PASSWORD: ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U openfga -d openfga"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Migrate OpenFGA datastore
+        run: |
+          docker run --rm --network=host \
+            -e OPENFGA_DATASTORE_ENGINE=postgres \
+            -e OPENFGA_DATASTORE_URI="postgres://openfga:ci_password@127.0.0.1:5432/openfga?sslmode=disable" \
+            openfga/openfga:v1.6.2 migrate
+
+      - name: Start OpenFGA (background)
+        run: |
+          docker run -d --name openfga --network=host \
+            -e OPENFGA_DATASTORE_ENGINE=postgres \
+            -e OPENFGA_DATASTORE_URI="postgres://openfga:ci_password@127.0.0.1:5432/openfga?sslmode=disable" \
+            -e OPENFGA_LOG_FORMAT=json \
+            openfga/openfga:v1.6.2 run
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8080/healthz >/dev/null; then
+              echo "OpenFGA is up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "OpenFGA failed to start" >&2
+          docker logs openfga >&2 || true
+          exit 1
+
+      - name: Apply bsvibe.fga via bootstrap.sh
+        env:
+          OPENFGA_API_URL: http://127.0.0.1:8080
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq jq
+          chmod +x infra/openfga/scripts/bootstrap.sh
+          infra/openfga/scripts/bootstrap.sh
+
+      - name: Idempotency check (re-run, expect no model write)
+        env:
+          OPENFGA_API_URL: http://127.0.0.1:8080
+        run: |
+          infra/openfga/scripts/bootstrap.sh | tee /tmp/run2.log
+          grep -q "schema unchanged" /tmp/run2.log
+
+      - name: Status check
+        env:
+          OPENFGA_API_URL: http://127.0.0.1:8080
+        run: |
+          chmod +x infra/openfga/scripts/status.sh
+          infra/openfga/scripts/status.sh
+
+      - name: Stop OpenFGA
+        if: always()
+        run: docker rm -f openfga || true

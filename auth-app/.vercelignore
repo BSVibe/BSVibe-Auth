@@ -1,0 +1,11 @@
+# Tests should not be deployed; they confuse Vercel's
+# legacy api/ auto-detection and bloat function payloads.
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+**/__tests__/**
+**/test-results/**
+**/playwright-report/**
+**/dist/**
+e2e/**

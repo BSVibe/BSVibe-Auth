@@ -23,9 +23,9 @@ bsvibe-site only).
 | Lint           | ESLint flat config + typescript-eslint | `eslint-config-next` is installed but the existing flat config is kept; the Next plugin warning at build is benign for this app's surface |
 | TS             | `~5.9.3`, `moduleResolution: "bundler"`| `paths`: `@/*` mapped to repo root |
 
-`pnpm` is **not** used in `auth-app`. PR #4 confirmed npm is the auth-app
-package manager — the lockfile is `package-lock.json`. Other Phase Z assets
-should pick the manager that matches their existing repo (most are npm).
+`pnpm` is the package manager for `auth-app` and the other Phase Z frontend
+assets. Lockfiles are `pnpm-lock.yaml` so CI, Vercel, and local installs use
+the same resolver.
 
 ---
 

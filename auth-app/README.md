@@ -59,12 +59,12 @@ auth-app/
 ## Scripts
 
 ```bash
-npm run dev       # next dev -p 5179
-npm run build     # next build
-npm start         # next start
-npm test          # vitest run (unit)
-npm run test:e2e  # playwright (boots `next dev` on 5179)
-npm run lint      # eslint .
+pnpm run dev       # next dev -p 5179
+pnpm run build     # next build
+pnpm start         # next start
+pnpm test          # vitest run (unit)
+pnpm run test:e2e  # playwright (boots `next dev` on 5179)
+pnpm run lint      # eslint .
 ```
 
 ## Environment

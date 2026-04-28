@@ -2,6 +2,7 @@
   "name": "@bsvibe/auth",
   "version": "0.4.0",
   "description": "BSVibe authentication SDK for frontend applications",
+  "packageManager": "pnpm@10.33.0",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -11,7 +12,7 @@
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "pnpm run build"
   },
   "repository": {
     "type": "git",

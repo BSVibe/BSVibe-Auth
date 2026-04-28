@@ -4,7 +4,7 @@ End-to-end behavior verified by P0.5 product integration (BSage / BSGateway / BS
 
 ## Package shape
 
-- [x] `npm run build` produces `.d.ts` for `useAuth`, `AuthProvider`, `hasPermission`, `switchTenant`, and the `User` / `Tenant` / `Permission` / `SessionEnvelope` / `SwitchTenantResponse` types.
+- [x] `pnpm run build` produces `.d.ts` for `useAuth`, `AuthProvider`, `hasPermission`, `switchTenant`, and the `User` / `Tenant` / `Permission` / `SessionEnvelope` / `SwitchTenantResponse` types.
 - [x] `dist/index.d.ts` re-exports all of the above (verified via `cat dist/index.d.ts`).
 - [x] `package.json` `peerDependencies.react: >=18.0.0` (optional) — non-React consumers can still import `hasPermission` / `switchTenant` without pulling React.
 - [x] No runtime React import inside `permissions.ts` or `switchTenant.ts` (verified — only `useAuth.tsx` imports React).

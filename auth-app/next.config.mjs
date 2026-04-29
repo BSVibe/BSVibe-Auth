@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  allowedDevOrigins: ['bsserver'],
   // Security headers for /api/* are handled per-route via NextResponse.
   async rewrites() {
     return [

@@ -166,8 +166,13 @@ describe("audit emit wiring", () => {
 
   it("/api/service-tokens/issue emits authz.service_token.issued", async () => {
     const getMembership = vi.fn().mockResolvedValue("owner");
+    const verifyAccessToken = vi.fn().mockResolvedValue("user-abc");
     const emitAudit = vi.fn().mockResolvedValue({ ok: true, eventId: "x" });
-    const handler = createIssueServiceTokenHandler({ getMembership, emitAudit });
+    const handler = createIssueServiceTokenHandler({
+      getMembership,
+      verifyAccessToken,
+      emitAudit,
+    });
     const req = makeReq({
       method: "POST",
       body: {

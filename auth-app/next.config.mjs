@@ -2,6 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   allowedDevOrigins: ['bsserver'],
+  devIndicators: false,
   // Security headers for /api/* are handled per-route via NextResponse.
   async rewrites() {
     return [

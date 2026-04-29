@@ -27,27 +27,35 @@ export interface IssueServiceTokenHandlerDeps {
     tenantId: string,
     fetchImpl?: typeof fetch,
   ) => Promise<TenantRole | null>;
+  verifyAccessToken?: (
+    cfg: { url: string; anonKey: string },
+    accessToken: string,
+    fetchImpl?: typeof fetch,
+  ) => Promise<string | null>;
   fetchImpl?: typeof fetch;
   emitAudit?: EmitAuditFn;
 }
 
-interface AccessTokenPayload {
-  sub?: string;
+interface SupabaseUserResponse {
+  id?: string;
 }
 
-function decodeUserId(token: string): string | null {
-  const parts = token.split(".");
-  if (parts.length !== 3) return null;
-  try {
-    const padded = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const padLen = (4 - (padded.length % 4)) % 4;
-    const payload = JSON.parse(
-      atob(padded + "=".repeat(padLen)),
-    ) as AccessTokenPayload;
-    return payload.sub ?? null;
-  } catch {
-    return null;
-  }
+export async function verifySupabaseAccessToken(
+  cfg: { url: string; anonKey: string },
+  accessToken: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string | null> {
+  const resp = await fetchImpl(`${cfg.url}/auth/v1/user`, {
+    method: "GET",
+    headers: {
+      apikey: cfg.anonKey,
+      Authorization: `Bearer ${accessToken}`,
+      Accept: "application/json",
+    },
+  });
+  if (!resp.ok) return null;
+  const user = (await resp.json()) as SupabaseUserResponse;
+  return typeof user.id === "string" && user.id.length > 0 ? user.id : null;
 }
 
 const ELEVATED_ROLES: ReadonlySet<TenantRole> = new Set(["owner", "admin"]);
@@ -56,6 +64,7 @@ export function createIssueServiceTokenHandler(
   deps: IssueServiceTokenHandlerDeps = {},
 ) {
   const getMembership = deps.getMembership ?? getMembershipImpl;
+  const verifyAccessToken = deps.verifyAccessToken ?? verifySupabaseAccessToken;
   const fetchImpl = deps.fetchImpl ?? fetch;
   const emitAudit: EmitAuditFn =
     deps.emitAudit ??
@@ -75,12 +84,14 @@ export function createIssueServiceTokenHandler(
     }
 
     const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseAnonKey =
+      process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const signingSecret = process.env.SERVICE_TOKEN_SIGNING_SECRET;
     const issuer =
       process.env.SERVICE_TOKEN_ISSUER || "https://auth.bsvibe.dev";
 
-    if (!supabaseUrl || !serviceRoleKey) {
+    if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
       return res.status(500).json({ error: "Auth service not configured" });
     }
     if (!signingSecret) {
@@ -95,7 +106,11 @@ export function createIssueServiceTokenHandler(
       return res.status(401).json({ error: "Not authenticated" });
     }
 
-    const userId = decodeUserId(accessToken);
+    const userId = await verifyAccessToken(
+      { url: supabaseUrl, anonKey: supabaseAnonKey },
+      accessToken,
+      fetchImpl,
+    );
     if (!userId) {
       return res.status(401).json({ error: "Invalid access_token" });
     }

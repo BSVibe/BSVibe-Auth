@@ -23,6 +23,7 @@ export const SERVICE_AUDIENCES = [
 export type ServiceAudience = (typeof SERVICE_AUDIENCES)[number];
 
 const SCOPE_PATTERN = /^[a-z][a-z0-9-]*\.[a-z][a-z0-9-]*$/;
+const BSVIBE_AUTH_INTERNAL_SCOPES = new Set(["audit.write"]);
 
 const DEFAULT_TTL_S = 3600; // 1 hour
 const MIN_TTL_S = 60;
@@ -110,7 +111,10 @@ export function validateScopes(
         `invalid scope format: ${String(s)}`,
       );
     }
-    if (!s.startsWith(`${audience}.`)) {
+    if (
+      !s.startsWith(`${audience}.`) &&
+      !(audience === "bsvibe-auth" && BSVIBE_AUTH_INTERNAL_SCOPES.has(s))
+    ) {
       throw new ServiceTokenError(
         "scope_audience_mismatch",
         `scope ${s} does not match audience ${audience}`,

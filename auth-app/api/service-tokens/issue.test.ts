@@ -8,6 +8,7 @@ import {
 
 const baseEnv = {
   SUPABASE_URL: "https://test.supabase.co",
+  SUPABASE_ANON_KEY: "anon-key",
   SUPABASE_SERVICE_ROLE_KEY: "service-role-key",
   SERVICE_TOKEN_SIGNING_SECRET: "test-signing-secret-32-bytes-min!!",
   SERVICE_TOKEN_ISSUER: "https://auth.bsvibe.dev",
@@ -21,10 +22,12 @@ const USER_TOKEN =
 
 describe("service-tokens/issue handler", () => {
   let envBackup: NodeJS.ProcessEnv;
+  const verifyAccessToken = vi.fn().mockResolvedValue("user-abc");
 
   beforeEach(() => {
     envBackup = { ...process.env };
     Object.assign(process.env, baseEnv);
+    verifyAccessToken.mockResolvedValue("user-abc");
   });
 
   afterEach(() => {
@@ -56,6 +59,7 @@ describe("service-tokens/issue handler", () => {
 
   it("returns 400 when audience missing", async () => {
     const handler = createIssueServiceTokenHandler({
+      verifyAccessToken,
       getMembership: vi.fn().mockResolvedValue("owner"),
     });
     const req = makeReq({
@@ -70,6 +74,7 @@ describe("service-tokens/issue handler", () => {
 
   it("returns 400 when audience invalid", async () => {
     const handler = createIssueServiceTokenHandler({
+      verifyAccessToken,
       getMembership: vi.fn().mockResolvedValue("owner"),
     });
     const req = makeReq({
@@ -84,6 +89,7 @@ describe("service-tokens/issue handler", () => {
 
   it("returns 400 when scope mismatches audience", async () => {
     const handler = createIssueServiceTokenHandler({
+      verifyAccessToken,
       getMembership: vi.fn().mockResolvedValue("owner"),
     });
     const req = makeReq({
@@ -102,7 +108,7 @@ describe("service-tokens/issue handler", () => {
 
   it("returns 403 when caller is not a member of tenant_id", async () => {
     const getMembership = vi.fn().mockResolvedValue(null);
-    const handler = createIssueServiceTokenHandler({ getMembership });
+    const handler = createIssueServiceTokenHandler({ verifyAccessToken, getMembership });
     const req = makeReq({
       method: "POST",
       body: {
@@ -119,7 +125,7 @@ describe("service-tokens/issue handler", () => {
 
   it("returns 403 when caller role is below admin (member)", async () => {
     const getMembership = vi.fn().mockResolvedValue("member");
-    const handler = createIssueServiceTokenHandler({ getMembership });
+    const handler = createIssueServiceTokenHandler({ verifyAccessToken, getMembership });
     const req = makeReq({
       method: "POST",
       body: {
@@ -136,7 +142,7 @@ describe("service-tokens/issue handler", () => {
 
   it("returns 403 when caller role is viewer", async () => {
     const getMembership = vi.fn().mockResolvedValue("viewer");
-    const handler = createIssueServiceTokenHandler({ getMembership });
+    const handler = createIssueServiceTokenHandler({ verifyAccessToken, getMembership });
     const req = makeReq({
       method: "POST",
       body: {
@@ -153,7 +159,7 @@ describe("service-tokens/issue handler", () => {
 
   it("issues a token when caller is owner", async () => {
     const getMembership = vi.fn().mockResolvedValue("owner");
-    const handler = createIssueServiceTokenHandler({ getMembership });
+    const handler = createIssueServiceTokenHandler({ verifyAccessToken, getMembership });
     const req = makeReq({
       method: "POST",
       body: {
@@ -197,7 +203,7 @@ describe("service-tokens/issue handler", () => {
 
   it("issues a token when caller is admin", async () => {
     const getMembership = vi.fn().mockResolvedValue("admin");
-    const handler = createIssueServiceTokenHandler({ getMembership });
+    const handler = createIssueServiceTokenHandler({ verifyAccessToken, getMembership });
     const req = makeReq({
       method: "POST",
       body: {
@@ -216,6 +222,7 @@ describe("service-tokens/issue handler", () => {
 
   it("returns 400 when tenant_id is missing", async () => {
     const handler = createIssueServiceTokenHandler({
+      verifyAccessToken,
       getMembership: vi.fn().mockResolvedValue("owner"),
     });
     const req = makeReq({
@@ -230,6 +237,7 @@ describe("service-tokens/issue handler", () => {
 
   it("returns 400 for invalid TTL", async () => {
     const handler = createIssueServiceTokenHandler({
+      verifyAccessToken,
       getMembership: vi.fn().mockResolvedValue("owner"),
     });
     const req = makeReq({
@@ -250,6 +258,7 @@ describe("service-tokens/issue handler", () => {
   it("returns 500 when SERVICE_TOKEN_SIGNING_SECRET not configured", async () => {
     delete process.env.SERVICE_TOKEN_SIGNING_SECRET;
     const handler = createIssueServiceTokenHandler({
+      verifyAccessToken,
       getMembership: vi.fn().mockResolvedValue("owner"),
     });
     const req = makeReq({
@@ -264,5 +273,49 @@ describe("service-tokens/issue handler", () => {
     const { res, captured } = makeRes();
     await handler(req, res);
     expect(captured.statusCode).toBe(500);
+  });
+
+  it("returns 401 and skips membership lookup when access token verification fails", async () => {
+    verifyAccessToken.mockResolvedValueOnce(null);
+    const getMembership = vi.fn().mockResolvedValue("owner");
+    const handler = createIssueServiceTokenHandler({ verifyAccessToken, getMembership });
+    const req = makeReq({
+      method: "POST",
+      body: {
+        audience: "bsage",
+        scope: ["bsage.read"],
+        tenant_id: "t1",
+      },
+      headers: { authorization: `Bearer ${USER_TOKEN}` },
+    });
+    const { res, captured } = makeRes();
+    await handler(req, res);
+
+    expect(captured.statusCode).toBe(401);
+    expect(getMembership).not.toHaveBeenCalled();
+  });
+
+  it("issues bsvibe-auth audit.write tokens for audit ingestion", async () => {
+    const handler = createIssueServiceTokenHandler({
+      verifyAccessToken,
+      getMembership: vi.fn().mockResolvedValue("owner"),
+    });
+    const req = makeReq({
+      method: "POST",
+      body: {
+        audience: "bsvibe-auth",
+        scope: ["audit.write"],
+        tenant_id: "t1",
+      },
+      headers: { authorization: `Bearer ${USER_TOKEN}` },
+    });
+    const { res, captured } = makeRes();
+    await handler(req, res);
+
+    expect(captured.statusCode).toBe(200);
+    const body = captured.body as { access_token: string };
+    const payload = decodeJwtPayload<ServiceTokenPayload>(body.access_token);
+    expect(payload.aud).toBe("bsvibe-auth");
+    expect(payload.scope).toBe("audit.write");
   });
 });

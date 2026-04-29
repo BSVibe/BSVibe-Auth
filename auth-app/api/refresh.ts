@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+import type { VercelRequest, VercelResponse } from "./_lib/types";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
@@ -12,7 +12,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: "Auth service not configured" });
   }
 
-  const { refresh_token } = req.body ?? {};
+  const { refresh_token } = (req.body ?? {}) as { refresh_token?: string };
   if (!refresh_token) {
     return res.status(400).json({ error: "refresh_token is required" });
   }

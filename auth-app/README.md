@@ -1,73 +1,82 @@
-# React + TypeScript + Vite
+# BSVibe-Auth (auth-app)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+`auth.bsvibe.dev` — the BSVibe SSO surface. Issues Supabase-backed user sessions,
+manages tenant context (`switch_tenant`), and mints scoped service JWTs
+(`/api/service-tokens/issue`) used by BSGateway / BSage / BSupervisor / BSNexus.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Next.js 15** App Router (`app/`)
+- **React 19**
+- **Tailwind 4** via `@tailwindcss/postcss` + `@import "tailwindcss"`
+- **Supabase** (auth + RLS + tenant tables)
+- **Vitest** for unit tests, **Playwright** for e2e
 
-## React Compiler
+This app was migrated from Vite + React Router in Phase Z. See
+[`MIGRATION_NOTES.md`](./MIGRATION_NOTES.md) for the full transition record —
+that document is the baseline pattern the remaining 5 Phase Z assets follow.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Layout
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```
+auth-app/
+├─ app/                       # Next.js 15 App Router
+│  ├─ layout.tsx
+│  ├─ page.tsx                # → redirects to /login
+│  ├─ globals.css             # Tailwind 4 + dark theme
+│  ├─ login/page.tsx          # thin Suspense wrappers around src/components/*
+│  ├─ signup/page.tsx
+│  ├─ callback/page.tsx
+│  ├─ logout/page.tsx
+│  └─ api/                    # Next.js Route Handlers
+│     ├─ _adapter.ts          # Vercel-style → Route-Handler adapter
+│     ├─ session/route.ts
+│     ├─ session/switch_tenant/route.ts
+│     ├─ refresh/route.ts
+│     ├─ logout/route.ts
+│     ├─ silent-check/route.ts
+│     └─ service-tokens/issue/route.ts
+├─ api/                       # Vercel-style handler factories (unit-tested)
+│  ├─ _lib/{tenants,service-token,test-helpers,types}.ts
+│  ├─ session.ts              # createSessionHandler() + default
+│  ├─ session/switch_tenant.ts
+│  ├─ refresh.ts
+│  ├─ logout.ts
+│  ├─ silent-check.ts
+│  └─ service-tokens/issue.ts
+├─ src/
+│  ├─ components/             # client React components (LoginPage, ...)
+│  ├─ lib/{supabase,redirect}.ts
+│  └─ test-setup.ts           # vitest setup — mocks next/navigation, next/link
+├─ e2e/auth.spec.ts
+├─ next.config.mjs
+├─ postcss.config.mjs
+├─ vitest.config.ts
+├─ playwright.config.ts
+└─ tsconfig.json
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Scripts
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+pnpm run dev       # next dev -p 5179
+pnpm run build     # next build
+pnpm start         # next start
+pnpm test          # vitest run (unit)
+pnpm run test:e2e  # playwright (boots `next dev` on 5179)
+pnpm run lint      # eslint .
 ```
+
+## Environment
+
+See `.env.example`. Two prefix conventions:
+
+- `NEXT_PUBLIC_*` — inlined into the client bundle at build time
+  (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+  `NEXT_PUBLIC_ALLOWED_REDIRECT_ORIGINS`).
+- Unprefixed — server-only, available to Route Handlers and never sent to the
+  client (`SUPABASE_SERVICE_ROLE_KEY`, `SERVICE_TOKEN_SIGNING_SECRET`,
+  `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `ALLOWED_REDIRECT_ORIGINS`).
+
+For local development with mock values, the unprefixed forms also serve as
+fallbacks for the public ones — the lib modules accept either at runtime.

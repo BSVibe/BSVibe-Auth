@@ -1,0 +1,157 @@
+'use client';
+
+import { useState, useMemo } from 'react';
+import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { signInWithPassword, signInWithOAuth } from '../lib/supabase';
+import { validateRedirectUri, buildCallbackUrl } from '../lib/redirect';
+
+export function LoginPage() {
+  const searchParams = useSearchParams();
+  const redirectUri = searchParams?.get('redirect_uri') ?? null;
+  const state = searchParams?.get('state') ?? null;
+  const effectiveRedirectUri = redirectUri || 'https://bsvibe.dev/account';
+
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const validation = useMemo(
+    () => redirectUri ? validateRedirectUri(redirectUri) : { valid: true },
+    [redirectUri],
+  );
+
+  const queryString = searchParams?.toString() ?? '';
+  const signupLink = `/signup${queryString ? `?${queryString}` : ''}`;
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!validation.valid) return;
+
+    setError('');
+    setLoading(true);
+
+    try {
+      const result = await signInWithPassword(email, password);
+
+      // Set session cookie for SSO + emit auth.session.started
+      try {
+        await fetch('/api/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            refresh_token: result.refresh_token,
+            event: 'login_success',
+            user_id: result.user.id,
+            email: result.user.email,
+          }),
+          credentials: 'same-origin',
+        });
+      } catch {
+        // Best effort — SSO cookie / audit emit are not critical for login flow
+      }
+
+      if (redirectUri) {
+        // Legacy: product has its own callback, send tokens in hash
+        const callbackUrl = buildCallbackUrl(redirectUri, {
+          access_token: result.access_token,
+          refresh_token: result.refresh_token,
+          expires_in: result.expires_in,
+          state: state || undefined,
+        });
+        window.location.href = callbackUrl;
+      } else {
+        // Shared cookie is set, just redirect
+        window.location.href = effectiveRedirectUri;
+      }
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : 'Login failed';
+      // Best-effort emit of auth.session.failed; never block UI on it.
+      try {
+        await fetch('/api/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            event: 'login_failed',
+            email,
+            reason,
+          }),
+          credentials: 'same-origin',
+        });
+      } catch {
+        // Swallow — audit emit must not surface to user.
+      }
+      setError(reason);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="container">
+      <div className="card">
+        <h1 className="logo">BSVibe</h1>
+        <p className="subtitle">Sign in to continue</p>
+
+        {!validation.valid ? (
+          <div className="error-box">{validation.error}</div>
+        ) : (
+          <form onSubmit={handleSubmit}>
+            {error && <div className="error-box">{error}</div>}
+            <div className="field">
+              <label htmlFor="email">Email</label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                required
+                autoFocus
+                disabled={loading}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="password">Password</label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Password"
+                required
+                disabled={loading}
+              />
+            </div>
+            <button type="submit" className="btn" disabled={loading}>
+              {loading ? 'Signing in\u2026' : 'Sign in'}
+            </button>
+            <div className="divider"><span>or</span></div>
+            <button
+              type="button"
+              className="btn btn-google"
+              disabled={loading}
+              onClick={() => {
+                if (validation.valid) {
+                  signInWithOAuth('google', { redirectUri, state: state || undefined });
+                }
+              }}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z" />
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+              </svg>
+              Continue with Google
+            </button>
+            <p className="link-text">
+              Don&apos;t have an account? <Link href={signupLink}>Sign up</Link>
+            </p>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -17,10 +17,13 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'vite --port 5179',
+    command: 'next dev -p 5179',
     url: 'http://localhost:5179',
     reuseExistingServer: !process.env.CI,
     env: {
+      NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-anon-key',
+      NEXT_PUBLIC_ALLOWED_REDIRECT_ORIGINS: 'http://localhost:5179,http://example.com',
       SUPABASE_URL: 'https://test.supabase.co',
       SUPABASE_ANON_KEY: 'test-anon-key',
       ALLOWED_REDIRECT_ORIGINS: 'http://localhost:5179,http://example.com',

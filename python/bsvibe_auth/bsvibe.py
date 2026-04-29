@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import os
 
 import httpx
 import jwt
@@ -51,20 +52,30 @@ class BsvibeAuthProvider(AuthProvider):
         self,
         auth_url: str = "https://auth.bsvibe.dev",
         jwks_url: str | None = None,
+        jwt_secret: str | None = None,
         algorithms: list[str] | None = None,
     ) -> None:
         self._auth_url = auth_url.rstrip("/")
-        self._algorithms = algorithms or ["ES256"]
-        resolved_jwks_url = jwks_url or f"{self._auth_url}/.well-known/jwks.json"
-        self._jwks_client = jwt.PyJWKClient(resolved_jwks_url, cache_keys=True)
+        self._jwt_secret = jwt_secret or os.getenv("USER_JWT_SECRET")
+        if self._jwt_secret:
+            self._algorithms = algorithms or [os.getenv("USER_JWT_ALGORITHM", "HS256")]
+            self._jwks_client = None
+        else:
+            self._algorithms = algorithms or ["ES256"]
+            resolved_jwks_url = jwks_url or f"{self._auth_url}/.well-known/jwks.json"
+            self._jwks_client = jwt.PyJWKClient(resolved_jwks_url, cache_keys=True)
 
     async def verify_token(self, token: str) -> BSVibeUser:
         """Verify a JWT using JWKS."""
         try:
-            signing_key = self._jwks_client.get_signing_key_from_jwt(token)
+            signing_key = (
+                self._jwt_secret
+                if self._jwt_secret
+                else self._jwks_client.get_signing_key_from_jwt(token).key
+            )
             payload = jwt.decode(
                 token,
-                signing_key.key,
+                signing_key,
                 algorithms=self._algorithms,
                 audience="authenticated",
             )

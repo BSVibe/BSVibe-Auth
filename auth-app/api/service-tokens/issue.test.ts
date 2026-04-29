@@ -14,20 +14,22 @@ const baseEnv = {
   SERVICE_TOKEN_ISSUER: "https://auth.bsvibe.dev",
 };
 
-// Token for user "user-abc" with active tenant "t1"
+const userId = "11111111-1111-4111-8111-111111111111";
+
+// Token for the seeded user with active tenant "t1"
 const USER_TOKEN =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9." +
-  "eyJzdWIiOiJ1c2VyLWFiYyIsImVtYWlsIjoiYUBiLmMiLCJleHAiOjk5OTk5OTk5OTl9." +
+  "eyJzdWIiOiIxMTExMTExMS0xMTExLTQxMTEtODExMS0xMTExMTExMTExMTEiLCJlbWFpbCI6ImFAYi5jIiwiZXhwIjo5OTk5OTk5OTk5fQ." +
   "sig";
 
 describe("service-tokens/issue handler", () => {
   let envBackup: NodeJS.ProcessEnv;
-  const verifyAccessToken = vi.fn().mockResolvedValue("user-abc");
+  const verifyAccessToken = vi.fn().mockResolvedValue(userId);
 
   beforeEach(() => {
     envBackup = { ...process.env };
     Object.assign(process.env, baseEnv);
-    verifyAccessToken.mockResolvedValue("user-abc");
+    verifyAccessToken.mockResolvedValue(userId);
   });
 
   afterEach(() => {
@@ -55,6 +57,31 @@ describe("service-tokens/issue handler", () => {
     const { res, captured } = makeRes();
     await handler(req, res);
     expect(captured.statusCode).toBe(401);
+  });
+
+  it("returns 401 without membership lookup when bearer access token is invalid", async () => {
+    const getMembership = vi.fn();
+    const handler = createIssueServiceTokenHandler({
+      verifyAccessToken: vi.fn().mockResolvedValue(null),
+      getMembership,
+    });
+    const serviceSubjectToken =
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9." +
+      "eyJzdWIiOiJzZXJ2aWNlOmUyZSIsImV4cCI6OTk5OTk5OTk5OX0." +
+      "sig";
+    const req = makeReq({
+      method: "POST",
+      body: {
+        audience: "bsage",
+        scope: ["bsage.read"],
+        tenant_id: "t1",
+      },
+      headers: { authorization: `Bearer ${serviceSubjectToken}` },
+    });
+    const { res, captured } = makeRes();
+    await handler(req, res);
+    expect(captured.statusCode).toBe(401);
+    expect(getMembership).not.toHaveBeenCalled();
   });
 
   it("returns 400 when audience missing", async () => {
@@ -190,12 +217,12 @@ describe("service-tokens/issue handler", () => {
     expect(payload.token_type).toBe("service");
     expect(payload.tenant_id).toBe("t1");
     // Subject = "user:<userId>" because the token was issued by a user (delegated).
-    expect(payload.sub).toBe("user:user-abc");
+    expect(payload.sub).toBe(`user:${userId}`);
     expect(payload.iss).toBe(baseEnv.SERVICE_TOKEN_ISSUER);
 
     expect(getMembership).toHaveBeenCalledWith(
       expect.objectContaining({ url: baseEnv.SUPABASE_URL }),
-      "user-abc",
+      userId,
       "t1",
       expect.anything(),
     );

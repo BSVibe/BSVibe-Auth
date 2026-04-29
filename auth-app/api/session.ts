@@ -78,6 +78,7 @@ interface AccessTokenPayload {
   sub?: string;
   email?: string;
   exp?: number;
+  iat?: number;
 }
 
 function decodeAccessTokenPayload(token: string): AccessTokenPayload | null {
@@ -90,6 +91,77 @@ function decodeAccessTokenPayload(token: string): AccessTokenPayload | null {
   } catch {
     return null;
   }
+}
+
+function base64UrlEncode(bytes: Uint8Array): string {
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+function base64UrlEncodeJSON(value: unknown): string {
+  return base64UrlEncode(new TextEncoder().encode(JSON.stringify(value)));
+}
+
+async function hmacSha256(secret: string, message: string): Promise<Uint8Array> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(message),
+  );
+  return new Uint8Array(sig);
+}
+
+async function issueSessionJwt(input: {
+  supabaseAccessToken: string;
+  payload: AccessTokenPayload;
+  activeTenantId: string | null;
+  activeTenantRole: string | null;
+}): Promise<string> {
+  const signingSecret = process.env.USER_JWT_SECRET;
+  if (!signingSecret || !input.payload.sub) {
+    return input.supabaseAccessToken;
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const exp = input.payload.exp ?? now + 3600;
+  const iat = input.payload.iat ?? now;
+  const issuer =
+    process.env.USER_JWT_ISSUER ||
+    `${(process.env.SUPABASE_URL || "").replace(/\/$/, "")}/auth/v1`;
+  const audience = process.env.USER_JWT_AUDIENCE || "authenticated";
+
+  const claims = {
+    sub: input.payload.sub,
+    email: input.payload.email,
+    aud: audience,
+    iss: issuer,
+    exp,
+    iat,
+    active_tenant_id: input.activeTenantId,
+    app_metadata: input.activeTenantId
+      ? {
+          tenant_id: input.activeTenantId,
+          role: input.activeTenantRole || "member",
+        }
+      : {},
+    user_metadata: {},
+  };
+
+  const header = { alg: "HS256", typ: "JWT" } as const;
+  const signingInput = `${base64UrlEncodeJSON(header)}.${base64UrlEncodeJSON(claims)}`;
+  const signature = await hmacSha256(signingSecret, signingInput);
+  return `${signingInput}.${base64UrlEncode(signature)}`;
 }
 
 export function createSessionHandler(deps: SessionHandlerDeps = {}) {
@@ -255,6 +327,14 @@ export function createSessionHandler(deps: SessionHandlerDeps = {}) {
           activeTenantId = null;
         }
       }
+      const activeTenantRole =
+        tenants.find((tenant) => tenant.id === activeTenantId)?.role ?? null;
+      const accessToken = await issueSessionJwt({
+        supabaseAccessToken: data.access_token,
+        payload: payload ?? {},
+        activeTenantId,
+        activeTenantRole,
+      });
 
       // Update cookie with new refresh token
       res.setHeader(
@@ -263,7 +343,7 @@ export function createSessionHandler(deps: SessionHandlerDeps = {}) {
       );
 
       return res.status(200).json({
-        access_token: data.access_token,
+        access_token: accessToken,
         refresh_token: data.refresh_token,
         expires_in: data.expires_in,
         tenants,

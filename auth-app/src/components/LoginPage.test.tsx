@@ -27,6 +27,14 @@ describe('LoginPage - Google OAuth button', () => {
     expect(screen.getByText('or')).toBeInTheDocument();
   });
 
+  it('marks credentials with browser autocomplete hints', async () => {
+    const { LoginPage } = await import('./LoginPage');
+    render(<LoginPage />);
+
+    expect(screen.getByLabelText('Email')).toHaveAttribute('autoComplete', 'email');
+    expect(screen.getByLabelText('Password')).toHaveAttribute('autoComplete', 'current-password');
+  });
+
   it('Google button navigates to Supabase authorize URL on click', async () => {
     const user = userEvent.setup();
 

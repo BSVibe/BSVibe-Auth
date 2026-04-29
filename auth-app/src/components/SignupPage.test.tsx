@@ -25,4 +25,13 @@ describe('SignupPage - Google OAuth button', () => {
 
     expect(screen.getByText('or')).toBeInTheDocument();
   });
+
+  it('marks credentials with browser autocomplete hints', async () => {
+    const { SignupPage } = await import('./SignupPage');
+    render(<SignupPage />);
+
+    expect(screen.getByLabelText('Email')).toHaveAttribute('autoComplete', 'email');
+    expect(screen.getByLabelText('Password')).toHaveAttribute('autoComplete', 'new-password');
+    expect(screen.getByLabelText('Confirm password')).toHaveAttribute('autoComplete', 'new-password');
+  });
 });

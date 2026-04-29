@@ -100,6 +100,7 @@ export function SignupPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
+                autoComplete="email"
                 required
                 autoFocus
                 disabled={loading}
@@ -113,6 +114,7 @@ export function SignupPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="At least 8 characters"
+                autoComplete="new-password"
                 required
                 minLength={8}
                 disabled={loading}
@@ -126,6 +128,7 @@ export function SignupPage() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Confirm your password"
+                autoComplete="new-password"
                 required
                 minLength={8}
                 disabled={loading}

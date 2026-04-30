@@ -164,6 +164,71 @@ async function issueSessionJwt(input: {
   return `${signingInput}.${base64UrlEncode(signature)}`;
 }
 
+async function buildSessionFromRefreshToken(
+  refreshToken: string,
+  options: {
+    supabaseUrl: string;
+    supabaseAnonKey: string;
+    serviceRoleKey?: string;
+    requestedTenantId?: string;
+    fetchImpl: typeof fetch;
+    listTenants: NonNullable<SessionHandlerDeps["listTenantsForUser"]>;
+  },
+) {
+  const resp = await options.fetchImpl(
+    `${options.supabaseUrl}/auth/v1/token?grant_type=refresh_token`,
+    {
+      method: "POST",
+      headers: {
+        apikey: options.supabaseAnonKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    },
+  );
+
+  if (!resp.ok) {
+    return null;
+  }
+
+  const data = await resp.json();
+  let tenants: Tenant[] = [];
+  let activeTenantId: string | null = null;
+  const payload = decodeAccessTokenPayload(data.access_token);
+  const userId = payload?.sub;
+
+  if (userId && options.serviceRoleKey) {
+    try {
+      tenants = await options.listTenants(
+        { url: options.supabaseUrl, serviceRoleKey: options.serviceRoleKey },
+        userId,
+        options.fetchImpl,
+      );
+      activeTenantId = pickActiveTenant(tenants, options.requestedTenantId);
+    } catch {
+      tenants = [];
+      activeTenantId = null;
+    }
+  }
+
+  const activeTenantRole =
+    tenants.find((tenant) => tenant.id === activeTenantId)?.role ?? null;
+  const accessToken = await issueSessionJwt({
+    supabaseAccessToken: data.access_token,
+    payload: payload ?? {},
+    activeTenantId,
+    activeTenantRole,
+  });
+
+  return {
+    access_token: accessToken,
+    refresh_token: data.refresh_token,
+    expires_in: data.expires_in,
+    tenants,
+    active_tenant_id: activeTenantId,
+  };
+}
+
 export function createSessionHandler(deps: SessionHandlerDeps = {}) {
   const listTenants = deps.listTenantsForUser ?? listTenantsForUserImpl;
   const fetchImpl = deps.fetchImpl ?? fetch;
@@ -233,9 +298,25 @@ export function createSessionHandler(deps: SessionHandlerDeps = {}) {
         return res.status(400).json({ error: "refresh_token is required" });
       }
 
+      const session = await buildSessionFromRefreshToken(refresh_token, {
+        supabaseUrl,
+        supabaseAnonKey,
+        serviceRoleKey,
+        fetchImpl,
+        listTenants,
+      });
+
+      if (!session) {
+        res.setHeader(
+          "Set-Cookie",
+          `${COOKIE_NAME}=; HttpOnly; Secure; SameSite=Lax; Domain=${COOKIE_DOMAIN}; Path=/; Max-Age=0`,
+        );
+        return res.status(401).json({ error: "Session expired" });
+      }
+
       res.setHeader(
         "Set-Cookie",
-        `${COOKIE_NAME}=${refresh_token}; HttpOnly; Secure; SameSite=Lax; Domain=${COOKIE_DOMAIN}; Path=/; Max-Age=${COOKIE_MAX_AGE}`,
+        `${COOKIE_NAME}=${session.refresh_token}; HttpOnly; Secure; SameSite=Lax; Domain=${COOKIE_DOMAIN}; Path=/; Max-Age=${COOKIE_MAX_AGE}`,
       );
 
       // Emit auth event: signup_success -> auth.user.created,
@@ -270,7 +351,7 @@ export function createSessionHandler(deps: SessionHandlerDeps = {}) {
         );
       }
 
-      return res.status(200).json({ ok: true });
+      return res.status(200).json(session);
     }
 
     // GET — validate session cookie, refresh tokens, return fresh tokens + tenants
@@ -282,19 +363,16 @@ export function createSessionHandler(deps: SessionHandlerDeps = {}) {
         return res.status(401).json({ error: "No session" });
       }
 
-      const resp = await fetchImpl(
-        `${supabaseUrl}/auth/v1/token?grant_type=refresh_token`,
-        {
-          method: "POST",
-          headers: {
-            apikey: supabaseAnonKey,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ refresh_token: refreshToken }),
-        },
-      );
+      const session = await buildSessionFromRefreshToken(refreshToken, {
+        supabaseUrl,
+        supabaseAnonKey,
+        serviceRoleKey,
+        requestedTenantId: cookies[ACTIVE_TENANT_COOKIE],
+        fetchImpl,
+        listTenants,
+      });
 
-      if (!resp.ok) {
+      if (!session) {
         // Clear invalid cookie
         res.setHeader(
           "Set-Cookie",
@@ -303,52 +381,13 @@ export function createSessionHandler(deps: SessionHandlerDeps = {}) {
         return res.status(401).json({ error: "Session expired" });
       }
 
-      const data = await resp.json();
-
-      // Best-effort tenant lookup: ignore failures so session still refreshes
-      // even if the tenants table is unreachable. Recipients should treat an
-      // empty tenants array as "user has no active tenants" rather than fatal.
-      let tenants: Tenant[] = [];
-      let activeTenantId: string | null = null;
-      const payload = decodeAccessTokenPayload(data.access_token);
-      const userId = payload?.sub;
-
-      if (userId && serviceRoleKey) {
-        try {
-          tenants = await listTenants(
-            { url: supabaseUrl, serviceRoleKey },
-            userId,
-            fetchImpl,
-          );
-          const requested = cookies[ACTIVE_TENANT_COOKIE];
-          activeTenantId = pickActiveTenant(tenants, requested);
-        } catch {
-          tenants = [];
-          activeTenantId = null;
-        }
-      }
-      const activeTenantRole =
-        tenants.find((tenant) => tenant.id === activeTenantId)?.role ?? null;
-      const accessToken = await issueSessionJwt({
-        supabaseAccessToken: data.access_token,
-        payload: payload ?? {},
-        activeTenantId,
-        activeTenantRole,
-      });
-
       // Update cookie with new refresh token
       res.setHeader(
         "Set-Cookie",
-        `${COOKIE_NAME}=${data.refresh_token}; HttpOnly; Secure; SameSite=Lax; Domain=${COOKIE_DOMAIN}; Path=/; Max-Age=${COOKIE_MAX_AGE}`,
+        `${COOKIE_NAME}=${session.refresh_token}; HttpOnly; Secure; SameSite=Lax; Domain=${COOKIE_DOMAIN}; Path=/; Max-Age=${COOKIE_MAX_AGE}`,
       );
 
-      return res.status(200).json({
-        access_token: accessToken,
-        refresh_token: data.refresh_token,
-        expires_in: data.expires_in,
-        tenants,
-        active_tenant_id: activeTenantId,
-      });
+      return res.status(200).json(session);
     }
 
     // DELETE — clear session cookie

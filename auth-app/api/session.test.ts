@@ -53,8 +53,22 @@ describe("session handler", () => {
   });
 
   it("POST sets session cookie when refresh_token is provided", async () => {
+    const supabaseTokenResponse = {
+      access_token:
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9." +
+        "eyJzdWIiOiJ1c2VyLXBvc3QiLCJlbWFpbCI6InBvc3RAZXhhbXBsZS5kZXYiLCJleHAiOjk5OTk5OTk5OTl9." +
+        "sig",
+      refresh_token: "rt-new",
+      expires_in: 3600,
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => supabaseTokenResponse,
+    });
+    const listTenants = vi.fn().mockResolvedValue(mockTenants);
     const handler = createSessionHandler({
-      listTenantsForUser: vi.fn(),
+      listTenantsForUser: listTenants,
+      fetchImpl: fetchMock as unknown as typeof fetch,
     });
     const req = makeReq({
       method: "POST",
@@ -63,11 +77,36 @@ describe("session handler", () => {
     const { res, captured } = makeRes();
     await handler(req, res);
     expect(captured.statusCode).toBe(200);
-    expect(captured.body).toEqual({ ok: true });
+    const body = captured.body as Record<string, unknown>;
+    expect(body.refresh_token).toBe("rt-new");
+    expect(body.expires_in).toBe(3600);
+    expect(body.tenants).toEqual(mockTenants);
+    expect(body.active_tenant_id).toBe("p1");
+    expect(body.access_token).not.toBe(supabaseTokenResponse.access_token);
+    expect(decodeJwtPayload<{ app_metadata: { tenant_id: string } }>(String(body.access_token)).app_metadata.tenant_id).toBe("p1");
     const setCookie = getSetCookieHeader(captured);
-    expect(setCookie).toMatch(/bsvibe_session=rt-123/);
+    expect(setCookie).toMatch(/bsvibe_session=rt-new/);
     expect(setCookie).toMatch(/HttpOnly/);
     expect(setCookie).toMatch(/Domain=\.bsvibe\.dev/);
+  });
+
+  it("POST clears cookie and returns 401 when refresh token exchange fails", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({ ok: false, status: 401, json: async () => ({}) });
+    const handler = createSessionHandler({
+      listTenantsForUser: vi.fn(),
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+    const req = makeReq({
+      method: "POST",
+      body: { refresh_token: "rt-bad" },
+    });
+    const { res, captured } = makeRes();
+    await handler(req, res);
+    expect(captured.statusCode).toBe(401);
+    expect(captured.body).toEqual({ error: "Session expired" });
+    expect(getSetCookieHeader(captured)).toMatch(/Max-Age=0/);
   });
 
   it("POST returns 400 when refresh_token is missing", async () => {

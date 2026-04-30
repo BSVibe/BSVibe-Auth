@@ -31,6 +31,17 @@ const USER_TOKEN =
   "eyJzdWIiOiJ1c2VyLWFiYyIsImVtYWlsIjoiYUBiLmMiLCJleHAiOjk5OTk5OTk5OTl9." +
   "sig";
 
+function mockRefreshFetch(refreshToken = "rt-new") {
+  return vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({
+      access_token: USER_TOKEN,
+      refresh_token: refreshToken,
+      expires_in: 3600,
+    }),
+  }) as unknown as typeof fetch;
+}
+
 describe("audit emit wiring", () => {
   let envBackup: NodeJS.ProcessEnv;
 
@@ -47,6 +58,7 @@ describe("audit emit wiring", () => {
     const emitAudit = vi.fn().mockResolvedValue({ ok: true, eventId: "x" });
     const handler = createSessionHandler({
       listTenantsForUser: vi.fn(),
+      fetchImpl: mockRefreshFetch(),
       emitAudit,
     });
     const req = makeReq({
@@ -76,6 +88,7 @@ describe("audit emit wiring", () => {
     const emitAudit = vi.fn().mockResolvedValue({ ok: true, eventId: "x" });
     const handler = createSessionHandler({
       listTenantsForUser: vi.fn(),
+      fetchImpl: mockRefreshFetch(),
       emitAudit,
     });
     const req = makeReq({
@@ -100,6 +113,7 @@ describe("audit emit wiring", () => {
     const emitAudit = vi.fn().mockResolvedValue({ ok: true, eventId: "x" });
     const handler = createSessionHandler({
       listTenantsForUser: vi.fn(),
+      fetchImpl: mockRefreshFetch(),
       emitAudit,
     });
     const req = makeReq({
@@ -129,6 +143,7 @@ describe("audit emit wiring", () => {
     const emitAudit = vi.fn().mockResolvedValue({ ok: true, eventId: "x" });
     const handler = createSessionHandler({
       listTenantsForUser: vi.fn(),
+      fetchImpl: mockRefreshFetch(),
       emitAudit,
     });
     const req = makeReq({

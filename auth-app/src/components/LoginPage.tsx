@@ -25,6 +25,30 @@ export function LoginPage() {
   const queryString = searchParams?.toString() ?? '';
   const signupLink = `/signup${queryString ? `?${queryString}` : ''}`;
 
+  async function createSession(result: Awaited<ReturnType<typeof signInWithPassword>>) {
+    const response = await fetch('/api/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        refresh_token: result.refresh_token,
+        event: 'login_success',
+        user_id: result.user.id,
+        email: result.user.email,
+      }),
+      credentials: 'same-origin',
+    });
+
+    if (!response.ok) {
+      throw new Error('Unable to establish BSVibe session');
+    }
+
+    return response.json() as Promise<{
+      access_token: string;
+      refresh_token: string;
+      expires_in: number;
+    }>;
+  }
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!validation.valid) return;
@@ -34,30 +58,14 @@ export function LoginPage() {
 
     try {
       const result = await signInWithPassword(email, password);
-
-      // Set session cookie for SSO + emit auth.session.started
-      try {
-        await fetch('/api/session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            refresh_token: result.refresh_token,
-            event: 'login_success',
-            user_id: result.user.id,
-            email: result.user.email,
-          }),
-          credentials: 'same-origin',
-        });
-      } catch {
-        // Best effort — SSO cookie / audit emit are not critical for login flow
-      }
+      const session = await createSession(result);
 
       if (redirectUri) {
-        // Legacy: product has its own callback, send tokens in hash
+        // Products consume BSVibe session JWTs, not raw Supabase tokens.
         const callbackUrl = buildCallbackUrl(redirectUri, {
-          access_token: result.access_token,
-          refresh_token: result.refresh_token,
-          expires_in: result.expires_in,
+          access_token: session.access_token,
+          refresh_token: session.refresh_token,
+          expires_in: session.expires_in,
           state: state || undefined,
         });
         window.location.href = callbackUrl;

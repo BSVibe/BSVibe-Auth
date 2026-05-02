@@ -18,8 +18,10 @@ on:
 permissions:
   contents: read
 
-# Validate the .fga DSL on every PR; on main, additionally apply the model to a
-# disposable OpenFGA instance to prove the model boots cleanly + survives a write.
+# Validate the .fga DSL on every PR + push, then apply the model to a
+# disposable OpenFGA instance to prove the model boots cleanly + survives a
+# write + bootstrap.sh stays idempotent. Smoke runs pre-merge so script
+# bugs and real-write rejections fail the PR rather than the next deploy.
 # Production application against the Mac Mini happens via launchd + the manual
 # infra/openfga/scripts/bootstrap.sh step (Auth_Design.md §10.2 — schema is
 # code-PR-only, no remote write from CI).
@@ -120,7 +122,9 @@ jobs:
 
   smoke-apply:
     name: Smoke-apply against disposable OpenFGA
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Runs on every PR + push so bootstrap.sh script bugs, real-write
+    # rejections, and idempotency regressions are caught BEFORE merge —
+    # not after, when a broken model would block the Mac Mini deploy.
     needs: [drift-guard, validate]
     runs-on: ubuntu-latest
 

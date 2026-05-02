@@ -17,9 +17,9 @@ BSVibe-Auth/
 
 ## auth-app
 
-React 19 + Vite SPA deployed to Vercel as `auth.bsvibe.dev`. Hosts the login,
-signup, logout, and OAuth callback pages, plus serverless API endpoints for
-SSO session management.
+Next.js 15 App Router app deployed to Vercel as `auth.bsvibe.dev`. Hosts the
+login, signup, logout, and OAuth callback pages, plus Route Handler API
+endpoints for SSO session management.
 
 **Features**
 - Email/password authentication via Supabase
@@ -40,8 +40,10 @@ SSO session management.
 | Method | Path | Purpose |
 |--------|------|---------|
 | `POST` | `/api/session` | Set SSO cookie from `refresh_token` |
-| `GET` | `/api/session` | Refresh tokens from session cookie |
+| `GET` | `/api/session` | Refresh tokens + return `tenants[]` and `active_tenant_id` |
 | `DELETE` | `/api/session` | Clear session cookie |
+| `POST` | `/api/session/switch_tenant` | Set active tenant (validates membership) |
+| `POST` | `/api/service-tokens/issue` | Issue audience-scoped service JWT (admin/owner only) |
 | `POST` | `/api/refresh` | Token refresh |
 | `POST` | `/api/logout` | Invalidate Supabase session |
 | `GET` | `/api/silent-check` | SSO probe via redirect |
@@ -49,12 +51,12 @@ SSO session management.
 **Development**
 ```bash
 cd auth-app
-npm install
+pnpm install
 cp .env.example .env  # Set SUPABASE_URL, SUPABASE_ANON_KEY, ALLOWED_REDIRECT_ORIGINS
-npm run dev           # http://localhost:5173
-npm test              # Vitest unit tests
-npm run test:e2e      # Playwright E2E tests
-npm run build
+pnpm run dev          # http://localhost:5179
+pnpm test             # Vitest unit tests
+pnpm run test:e2e     # Playwright E2E tests
+pnpm run build
 ```
 
 ## @bsvibe/auth (JavaScript SDK)

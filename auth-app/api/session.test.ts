@@ -119,11 +119,70 @@ describe("session handler", () => {
     expect(captured.statusCode).toBe(400);
   });
 
-  it("GET returns 401 when no session cookie", async () => {
+  it("GET returns 401 when no session cookie and no Authorization header", async () => {
     const handler = createSessionHandler({
       listTenantsForUser: vi.fn(),
     });
     const req = makeReq({ method: "GET" });
+    const { res, captured } = makeRes();
+    await handler(req, res);
+    expect(captured.statusCode).toBe(401);
+  });
+
+  it("GET (bearer fallback) validates Authorization token via Supabase /auth/v1/user and returns tenants", async () => {
+    // Bearer-mode clients (token-mode SPAs / e2e) don't have the
+    // bsvibe_session cookie. They send the Supabase access_token in
+    // Authorization header instead. Auth-app validates with Supabase
+    // and returns the same shape (without rotating refresh_token).
+    const bearer =
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9." +
+      // Payload: {"sub":"user-abc","email":"a@b.c","exp":9999999999}
+      "eyJzdWIiOiJ1c2VyLWFiYyIsImVtYWlsIjoiYUBiLmMiLCJleHAiOjk5OTk5OTk5OTl9." +
+      "sig";
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: "user-abc" }),
+    });
+    const listTenants = vi.fn().mockResolvedValue(mockTenants);
+
+    const handler = createSessionHandler({
+      listTenantsForUser: listTenants,
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+    const req = makeReq({
+      method: "GET",
+      headers: { authorization: `Bearer ${bearer}` },
+    });
+    const { res, captured } = makeRes();
+    await handler(req, res);
+
+    expect(captured.statusCode).toBe(200);
+    const body = captured.body as Record<string, unknown>;
+    expect(body.access_token).toBe(bearer);
+    expect(body.refresh_token).toBe("");
+    expect(body.tenants).toEqual(mockTenants);
+    expect(body.active_tenant_id).toBe("p1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${baseEnv.SUPABASE_URL}/auth/v1/user`,
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          apikey: baseEnv.SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${bearer}`,
+        }),
+      }),
+    );
+  });
+
+  it("GET (bearer fallback) returns 401 when Supabase rejects the token", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) });
+    const handler = createSessionHandler({
+      listTenantsForUser: vi.fn(),
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+    const req = makeReq({
+      method: "GET",
+      headers: { authorization: "Bearer bad-token" },
+    });
     const { res, captured } = makeRes();
     await handler(req, res);
     expect(captured.statusCode).toBe(401);

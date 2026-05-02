@@ -60,7 +60,7 @@ function setCorsHeaders(res: VercelResponse, origin: string | null): void {
     res.setHeader("Access-Control-Allow-Credentials", "true");
   }
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 }
 
 function parseCookies(cookieHeader: string): Record<string, string> {
@@ -354,13 +354,62 @@ export function createSessionHandler(deps: SessionHandlerDeps = {}) {
       return res.status(200).json(session);
     }
 
-    // GET — validate session cookie, refresh tokens, return fresh tokens + tenants
+    // GET — validate session cookie, refresh tokens, return fresh tokens + tenants.
+    // Bearer fallback: token-mode clients (e2e, localStorage SPAs without
+    // cross-subdomain cookies) can send the Supabase access_token via
+    // `Authorization: Bearer …`. Auth-app validates it against
+    // Supabase /auth/v1/user, looks up the caller's tenants list, and
+    // returns the same shape — minus a fresh refresh_token, which only
+    // the cookie flow rotates.
     if (req.method === "GET") {
       const cookies = parseCookies(req.headers.cookie ?? "");
       const refreshToken = cookies[COOKIE_NAME];
 
       if (!refreshToken) {
-        return res.status(401).json({ error: "No session" });
+        const bearer = (req.headers.authorization ?? "")
+          .replace(/^Bearer\s+/i, "")
+          .trim();
+        if (!bearer) {
+          return res.status(401).json({ error: "No session" });
+        }
+        const userResp = await fetchImpl(`${supabaseUrl}/auth/v1/user`, {
+          headers: {
+            apikey: supabaseAnonKey,
+            Authorization: `Bearer ${bearer}`,
+          },
+        });
+        if (!userResp.ok) {
+          return res.status(401).json({ error: "Invalid bearer token" });
+        }
+        const userBody = (await userResp.json()) as { id?: string };
+        const userId = userBody?.id;
+        if (!userId) {
+          return res.status(401).json({ error: "Invalid bearer token" });
+        }
+        let tenants: Tenant[] = [];
+        if (serviceRoleKey) {
+          try {
+            tenants = await listTenants(
+              { url: supabaseUrl, serviceRoleKey },
+              userId,
+              fetchImpl,
+            );
+          } catch {
+            tenants = [];
+          }
+        }
+        const activeTenantId = pickActiveTenant(tenants, undefined);
+        const payload = decodeAccessTokenPayload(bearer);
+        const expiresIn = payload?.exp
+          ? Math.max(1, payload.exp - Math.floor(Date.now() / 1000))
+          : 3600;
+        return res.status(200).json({
+          access_token: bearer,
+          refresh_token: "",
+          expires_in: expiresIn,
+          tenants,
+          active_tenant_id: activeTenantId,
+        });
       }
 
       const session = await buildSessionFromRefreshToken(refreshToken, {

@@ -1,4 +1,4 @@
-import eventsHandler from '@/api/audit/events';
+import eventsHandler from '@/lib/handlers/audit/events';
 import { vercelToRoute, type VercelStyleHandler } from '@/app/api/_adapter';
 
 export const runtime = 'nodejs';

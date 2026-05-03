@@ -1,4 +1,4 @@
-import logoutHandler from '@/api/logout';
+import logoutHandler from '@/lib/handlers/logout';
 import { vercelToRoute, type VercelStyleHandler } from '@/app/api/_adapter';
 
 export const runtime = 'nodejs';

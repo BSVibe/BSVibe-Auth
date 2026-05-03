@@ -1,4 +1,4 @@
-import rulesHandler from '@/api/alerts/rules';
+import rulesHandler from '@/lib/handlers/alerts/rules';
 import { vercelToRoute, type VercelStyleHandler } from '@/app/api/_adapter';
 
 export const runtime = 'nodejs';

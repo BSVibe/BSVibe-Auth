@@ -94,7 +94,7 @@ a 4-liner:
 
 ```ts
 // app/api/session/route.ts
-import sessionHandler from '@/api/session';
+import sessionHandler from '@/lib/handlers/session';
 import { vercelToRoute, type VercelStyleHandler } from '@/app/api/_adapter';
 
 export const runtime = 'nodejs';

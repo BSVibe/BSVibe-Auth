@@ -1,4 +1,4 @@
-import issueHandler from '@/api/service-tokens/issue';
+import issueHandler from '@/lib/handlers/service-tokens/issue';
 import { vercelToRoute, type VercelStyleHandler } from '@/app/api/_adapter';
 
 export const runtime = 'nodejs';

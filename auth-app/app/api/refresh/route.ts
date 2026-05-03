@@ -1,4 +1,4 @@
-import refreshHandler from '@/api/refresh';
+import refreshHandler from '@/lib/handlers/refresh';
 import { vercelToRoute, type VercelStyleHandler } from '@/app/api/_adapter';
 
 export const runtime = 'nodejs';

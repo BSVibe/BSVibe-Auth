@@ -6,7 +6,7 @@
  * exercising the factory directly with `makeReq/makeRes`.
  */
 
-import sessionHandler from '@/api/session';
+import sessionHandler from '@/lib/handlers/session';
 import { vercelToRoute, type VercelStyleHandler } from '@/app/api/_adapter';
 
 export const runtime = 'nodejs';

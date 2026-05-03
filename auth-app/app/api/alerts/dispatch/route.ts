@@ -1,4 +1,4 @@
-import dispatchHandler from '@/api/alerts/dispatch';
+import dispatchHandler from '@/lib/handlers/alerts/dispatch';
 import { vercelToRoute, type VercelStyleHandler } from '@/app/api/_adapter';
 
 export const runtime = 'nodejs';

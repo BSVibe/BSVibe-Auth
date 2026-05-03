@@ -1,4 +1,4 @@
-import queryHandler from '@/api/audit/query';
+import queryHandler from '@/lib/handlers/audit/query';
 import { vercelToRoute, type VercelStyleHandler } from '@/app/api/_adapter';
 
 export const runtime = 'nodejs';

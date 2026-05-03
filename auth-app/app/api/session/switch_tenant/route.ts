@@ -1,4 +1,4 @@
-import switchTenantHandler from '@/api/session/switch_tenant';
+import switchTenantHandler from '@/lib/handlers/session/switch_tenant';
 import { vercelToRoute, type VercelStyleHandler } from '@/app/api/_adapter';
 
 export const runtime = 'nodejs';

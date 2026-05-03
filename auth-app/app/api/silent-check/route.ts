@@ -1,4 +1,4 @@
-import silentCheckHandler from '@/api/silent-check';
+import silentCheckHandler from '@/lib/handlers/silent-check';
 import { vercelToRoute, type VercelStyleHandler } from '@/app/api/_adapter';
 
 export const runtime = 'nodejs';

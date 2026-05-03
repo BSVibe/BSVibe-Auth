@@ -7,23 +7,49 @@ Schema for the BSVibe-Auth Supabase project.
 | File | Purpose |
 |------|---------|
 | `migrations/20260426_000001_tenants_init.sql` | Phase 0 P0.2 — `tenants`, `tenant_members`, RLS |
+| `migrations/20260427_000001_audit_schema.sql` | Audit Phase 1 — `audit_events`, query/ingest views |
+| `migrations/20260428_000001_alert_routes.sql` | D18 — central alert dispatch routes |
+| `seed.sql` | Idempotent prod bootstrap (admin tenant) — workflow_dispatch only |
 
 ## Applying
 
-There is no data migration in Phase 0 (decision #5 — no production users yet).
-The DDL is intentionally idempotent (`create ... if not exists`,
-`drop policy if exists`) so it can be re-applied safely.
+**Migrations apply automatically** via `.github/workflows/supabase-deploy.yml`
+on every merge to `main` that touches `supabase/migrations/**`. Adding a new
+migration file IS the deploy.
 
-### Supabase CLI
+The DDL is intentionally idempotent (`create ... if not exists`,
+`drop policy if exists`) so re-runs are safe.
+
+### Required GitHub repo secrets
+
+| Secret | Source |
+|--------|--------|
+| `SUPABASE_ACCESS_TOKEN` | https://supabase.com/dashboard/account/tokens |
+| `SUPABASE_DB_PASSWORD`  | Project Settings → Database → DB Password |
+
+(Project ref `hobuqhkrqqhuvpxofdcc` is hardcoded in the workflow so a wrong
+secret can never silently retarget the deploy.)
+
+### Manual (rare — only when CI broken)
 
 ```bash
-supabase db push --db-url "$SUPABASE_DB_URL"
+cd supabase
+supabase link --project-ref hobuqhkrqqhuvpxofdcc
+supabase db push --include-all
 ```
 
-### Manual (SQL editor)
+Or paste each `migrations/*.sql` into the Supabase Dashboard SQL Editor in
+chronological order.
 
-Open the Supabase project SQL editor, paste the contents of each file in
-chronological order, and run.
+## History
+
+Pre-2026-05-03: migrations were applied **manually** per the original Phase 0
+note "no production users yet." That step was forgotten across multiple PRs
+and `tenants` / `audit_events` / `alert_routes` were never created in prod —
+silently breaking tenant resolution because `/api/session` swallows the
+missing-table error and returns `active_tenant_id: null`. The
+`supabase-deploy.yml` workflow was added so the manual step can never be
+forgotten again.
 
 ## Tables
 

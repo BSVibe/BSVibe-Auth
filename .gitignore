@@ -44,3 +44,7 @@ js/.npmrc
 infra/openfga/.env
 infra/openfga/.bootstrap.json
 infra/openfga/logs/
+
+# Supabase CLI runtime artifacts
+supabase/.temp/
+supabase/.branches/

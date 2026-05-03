@@ -60,20 +60,23 @@ jobs:
             exit 1
           fi
 
+      # Note: do NOT set working-directory to `supabase/` — the CLI expects the
+      # project root and looks for migrations at `./supabase/migrations/*.sql`.
+      # Running from inside the supabase folder makes it look for
+      # `supabase/supabase/migrations/` and silently find zero files, so
+      # `db push` reports "Remote database is up to date" while applying
+      # nothing. (Hit on 2026-05-03; took two failed runs to spot.)
+
       - name: Link Supabase project
-        working-directory: supabase
         run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
 
       - name: Migration tracking — pre-push state
-        working-directory: supabase
         run: supabase migration list --linked
 
       - name: Push migrations
-        working-directory: supabase
         run: supabase db push --include-all --debug
 
       - name: Verify tables exist (sanity check)
-        working-directory: supabase
         run: |
           set -e
           for table in tenants tenant_members audit_events alert_routes; do
@@ -84,10 +87,9 @@ jobs:
 
       - name: Apply seed (workflow_dispatch only)
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.include_seed == 'true'
-        working-directory: supabase
         run: |
-          if [ -f seed.sql ]; then
-            supabase db query --linked --file seed.sql
+          if [ -f supabase/seed.sql ]; then
+            supabase db query --linked --file supabase/seed.sql
           else
             echo "::notice::supabase/seed.sql not present — skipping"
           fi

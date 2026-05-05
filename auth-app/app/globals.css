@@ -55,6 +55,15 @@ body {
 }
 
 .container {
+  /* Tailwind 4's preflight ships a ``.container`` utility that caps
+     ``max-width`` at the active breakpoint (e.g. 1536px for 2xl).
+     The auth-app's custom ``.container`` predates Tailwind and is
+     used as a viewport-filling flex centerer for the login / signup
+     / logout / callback forms. Without overriding ``width`` +
+     ``max-width`` the form stays anchored to the 1536px grid and
+     drifts left on wider monitors (1920+). */
+  width: 100%;
+  max-width: none;
   display: flex;
   align-items: center;
   justify-content: center;

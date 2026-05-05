@@ -24,9 +24,46 @@ interface AuthResponse {
   };
 }
 
+/**
+ * Supabase Auth error envelope. Supabase returns at least three
+ * distinct shapes depending on the failure mode:
+ *
+ *   - OAuth/legacy:  ``{ error, error_description }``
+ *   - Rate limits:   ``{ code, error_code, msg }``      (e.g.
+ *                    ``over_email_send_rate_limit``)
+ *   - Newer flows:   ``{ message }`` or ``{ msg }``     (signup
+ *                    validation, password policy, etc.)
+ *
+ * ``humanError`` walks all known fields so the UI never falls back
+ * to the generic "Signup failed" / "Login failed" string when
+ * Supabase actually told us why.
+ */
 interface AuthError {
-  error: string;
-  error_description: string;
+  error?: string;
+  error_description?: string;
+  error_code?: string;
+  msg?: string;
+  message?: string;
+  code?: number | string;
+}
+
+function humanError(err: AuthError, fallback: string): string {
+  // The two rate-limit codes are common enough to deserve copy that
+  // tells the user what to do, not just what failed.
+  if (err.error_code === 'over_email_send_rate_limit') {
+    return 'Too many sign-up attempts from this network. Please wait a few minutes and try again, or use Sign in with Google.';
+  }
+  if (err.error_code === 'over_request_rate_limit') {
+    return 'Too many requests. Please wait a moment and try again.';
+  }
+  return (
+    err.error_description ||
+    err.msg ||
+    err.message ||
+    err.error ||
+    err.error_code ||
+    fallback
+  );
 }
 
 export async function signInWithPassword(
@@ -47,7 +84,7 @@ export async function signInWithPassword(
 
   if (!res.ok) {
     const err: AuthError = await res.json();
-    throw new Error(err.error_description || err.error || 'Login failed');
+    throw new Error(humanError(err, 'Login failed'));
   }
 
   return res.json();
@@ -68,7 +105,7 @@ export async function signUp(
 
   if (!res.ok) {
     const err: AuthError = await res.json();
-    throw new Error(err.error_description || err.error || 'Signup failed');
+    throw new Error(humanError(err, 'Signup failed'));
   }
 
   return res.json();

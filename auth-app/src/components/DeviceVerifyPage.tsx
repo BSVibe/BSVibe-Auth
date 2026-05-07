@@ -16,6 +16,14 @@ interface VerifyResponse {
   status: VerifyStatus;
 }
 
+interface DeviceLookupResponse {
+  user_code: string;
+  client_id: string | null;
+  scope: string[];
+  audience: string[];
+  expires_at: string;
+}
+
 const USER_CODE_PATTERN = /^[A-Z0-9]{4}-[A-Z0-9]{4}$/;
 
 function buildLoginRedirect(userCode: string): string {
@@ -32,6 +40,8 @@ export function DeviceVerifyPage() {
 
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [details, setDetails] = useState<DeviceLookupResponse | null>(null);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [result, setResult] = useState<VerifyStatus | null>(null);
@@ -70,6 +80,51 @@ export function DeviceVerifyPage() {
       cancelled = true;
     };
   }, [userCode]);
+
+  // Fetch what the device is asking for so the user can decide informed.
+  // Failure is non-fatal — we still let the user approve/deny — but we tell
+  // them we couldn't load the details so they know to be cautious.
+  useEffect(() => {
+    if (!accessToken || !userCode) return;
+    let cancelled = false;
+    async function loadDetails() {
+      try {
+        const resp = await fetch(
+          `/api/oauth/device/lookup?user_code=${encodeURIComponent(userCode)}`,
+          {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${accessToken}` },
+            credentials: 'same-origin',
+          },
+        );
+        if (cancelled) return;
+        if (!resp.ok) {
+          const errBody = (await resp.json().catch(() => ({}))) as {
+            error?: string;
+          };
+          setDetailsError(
+            errBody.error || `Could not load device details (${resp.status})`,
+          );
+          return;
+        }
+        const body = (await resp.json()) as DeviceLookupResponse;
+        setDetails(body);
+        setDetailsError(null);
+      } catch (err) {
+        if (!cancelled) {
+          setDetailsError(
+            err instanceof Error
+              ? err.message
+              : 'Could not load device details',
+          );
+        }
+      }
+    }
+    loadDetails();
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, userCode]);
 
   const submit = useCallback(
     async (action: 'approve' | 'deny') => {
@@ -158,6 +213,40 @@ export function DeviceVerifyPage() {
       <div className="device-code-display">
         <code className="device-code">{userCode}</code>
       </div>
+
+      {details && (
+        <dl className="device-details">
+          {details.client_id && (
+            <>
+              <dt>Client</dt>
+              <dd><code>{details.client_id}</code></dd>
+            </>
+          )}
+          <dt>Scopes</dt>
+          <dd>
+            {details.scope.length === 0 ? (
+              <em>none</em>
+            ) : (
+              <ul className="device-scope-list">
+                {details.scope.map((s) => (
+                  <li key={s}><code>{s}</code></li>
+                ))}
+              </ul>
+            )}
+          </dd>
+          <dt>Audience</dt>
+          <dd>
+            {details.audience.length === 0 ? (
+              <em>none</em>
+            ) : (
+              details.audience.join(', ')
+            )}
+          </dd>
+        </dl>
+      )}
+      {!details && detailsError && (
+        <div className="error-box">{detailsError}</div>
+      )}
 
       {submitError && <div className="error-box">{submitError}</div>}
 

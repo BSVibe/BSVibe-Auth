@@ -476,3 +476,33 @@ body {
 .device-result {
   margin-top: 16px;
 }
+
+.device-details {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 16px;
+  margin: 16px 0 24px;
+  padding: 16px;
+  background: rgb(var(--color-bg-elevated));
+  border: 1px solid rgb(var(--color-border));
+  border-radius: var(--radius-md);
+}
+
+.device-details dt {
+  color: rgb(var(--color-text-secondary));
+  font-size: 0.875rem;
+}
+
+.device-details dd {
+  color: rgb(var(--color-text-primary));
+  margin: 0;
+}
+
+.device-scope-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}

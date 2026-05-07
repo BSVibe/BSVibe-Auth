@@ -31,10 +31,21 @@ function makeFetchMock(
   return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     const method = (init?.method ?? 'GET').toUpperCase();
-    const key = `${method} ${url}`;
-    const route = routes[key] ?? routes[url];
+    const exact = `${method} ${url}`;
+    // Exact match first, then prefix-style match for query-string routes.
+    let route = routes[exact] ?? routes[url];
     if (!route) {
-      throw new Error(`Unmocked fetch: ${key}`);
+      const prefixKey = Object.keys(routes).find((k) => {
+        const sep = k.indexOf(' ');
+        if (sep === -1) return false;
+        const m = k.slice(0, sep);
+        const u = k.slice(sep + 1);
+        return m === method && url.startsWith(u);
+      });
+      if (prefixKey) route = routes[prefixKey];
+    }
+    if (!route) {
+      throw new Error(`Unmocked fetch: ${exact}`);
     }
     return (typeof route === 'function' ? route(init) : route) as unknown as Response;
   });
@@ -48,6 +59,14 @@ const SESSION_OK = jsonResponse({
   active_tenant_id: TENANT,
 });
 
+const LOOKUP_OK = jsonResponse({
+  user_code: USER_CODE,
+  client_id: 'cli-tool',
+  scope: ['gateway:models:read'],
+  audience: ['gateway'],
+  expires_at: '2099-01-01T00:00:00Z',
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   globalThis.__setMockSearchParams(`user_code=${USER_CODE}`);
@@ -58,10 +77,11 @@ afterEach(() => {
 });
 
 describe('DeviceVerifyPage', () => {
-  it('renders the user_code and posts approve to /api/oauth/device/verify', async () => {
+  it('renders the user_code, scopes/audience, and posts approve', async () => {
     const verifyMock = vi.fn(() => jsonResponse({ status: 'approved' }));
     const fetchMock = makeFetchMock({
       'GET /api/session': SESSION_OK,
+      'GET /api/oauth/device/lookup': LOOKUP_OK,
       'POST /api/oauth/device/verify': verifyMock,
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -74,6 +94,11 @@ describe('DeviceVerifyPage', () => {
       await screen.findByText(/device is requesting access/i),
     ).toBeInTheDocument();
     expect(screen.getByText(USER_CODE)).toBeInTheDocument();
+
+    // Scopes + audience must be visible so the user can decide.
+    expect(await screen.findByText('gateway:models:read')).toBeInTheDocument();
+    expect(screen.getByText('cli-tool')).toBeInTheDocument();
+    expect(screen.getByText('gateway')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /^approve$/i }));
 
@@ -103,6 +128,7 @@ describe('DeviceVerifyPage', () => {
     const verifyMock = vi.fn(() => jsonResponse({ status: 'denied' }));
     const fetchMock = makeFetchMock({
       'GET /api/session': SESSION_OK,
+      'GET /api/oauth/device/lookup': LOOKUP_OK,
       'POST /api/oauth/device/verify': verifyMock,
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -175,9 +201,38 @@ describe('DeviceVerifyPage', () => {
     ).toBeInTheDocument();
   });
 
+  it('still allows approve/deny when the lookup endpoint fails', async () => {
+    const verifyMock = vi.fn(() => jsonResponse({ status: 'approved' }));
+    const fetchMock = makeFetchMock({
+      'GET /api/session': SESSION_OK,
+      'GET /api/oauth/device/lookup': jsonResponse(
+        { error: 'user_code not found, expired, or already verified' },
+        404,
+      ),
+      'POST /api/oauth/device/verify': verifyMock,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const user = userEvent.setup();
+    const { DeviceVerifyPage } = await import('./DeviceVerifyPage');
+    render(<DeviceVerifyPage />);
+
+    // Lookup error is rendered inline so the user knows details are unverified.
+    expect(
+      await screen.findByText(/not found, expired, or already verified/i),
+    ).toBeInTheDocument();
+
+    // But the approve/deny path still works — the user is the source of truth.
+    await user.click(screen.getByRole('button', { name: /^approve$/i }));
+    await waitFor(() => {
+      expect(verifyMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('shows server error inline when verify fails', async () => {
     const fetchMock = makeFetchMock({
       'GET /api/session': SESSION_OK,
+      'GET /api/oauth/device/lookup': LOOKUP_OK,
       'POST /api/oauth/device/verify': jsonResponse(
         { error: 'user_code not found, expired, or already verified' },
         404,

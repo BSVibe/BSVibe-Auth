@@ -445,3 +445,34 @@ body {
 .token-detail dd {
   color: rgb(var(--color-text-primary));
 }
+
+.device-code-display {
+  display: flex;
+  justify-content: center;
+  margin: 24px 0;
+}
+
+.device-code {
+  font-family: ui-monospace, monospace;
+  font-size: 1.75rem;
+  letter-spacing: 0.15em;
+  font-weight: 600;
+  padding: 12px 20px;
+  border-radius: var(--radius-md);
+  background: rgb(var(--color-surface));
+  border: 1px solid rgb(var(--color-border));
+}
+
+.success-box {
+  background: rgb(34 197 94 / 0.1);
+  color: #4ade80;
+  border: 1px solid rgb(34 197 94 / 0.2);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  font-size: 0.875rem;
+  margin-bottom: 16px;
+}
+
+.device-result {
+  margin-top: 16px;
+}

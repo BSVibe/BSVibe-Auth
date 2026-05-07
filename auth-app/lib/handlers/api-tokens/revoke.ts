@@ -15,6 +15,7 @@ import {
 } from "../_lib/audit-emit";
 import {
   authenticate,
+  getTokenIdFromRequest,
   isUuid,
   verifySupabaseAccessToken,
   type VerifyAccessTokenFn,
@@ -65,7 +66,7 @@ export function createRevokeTokenHandler(deps: RevokeTokenHandlerDeps = {}) {
     if (!auth) return;
     const { userId, env } = auth;
 
-    const id = req.query?.id;
+    const id = getTokenIdFromRequest(req);
     if (!isUuid(id)) {
       return res.status(400).json({ error: "id must be a uuid" });
     }

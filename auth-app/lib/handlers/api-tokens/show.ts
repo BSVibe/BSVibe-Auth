@@ -9,6 +9,7 @@
 import type { VercelRequest, VercelResponse } from "../_lib/types";
 import {
   authenticate,
+  getTokenIdFromRequest,
   isUuid,
   METADATA_SELECT,
   verifySupabaseAccessToken,
@@ -42,7 +43,7 @@ export function createShowTokenHandler(deps: ShowTokenHandlerDeps = {}) {
     if (!auth) return;
     const { userId, env } = auth;
 
-    const id = req.query?.id;
+    const id = getTokenIdFromRequest(req);
     if (!isUuid(id)) {
       return res.status(400).json({ error: "id must be a uuid" });
     }

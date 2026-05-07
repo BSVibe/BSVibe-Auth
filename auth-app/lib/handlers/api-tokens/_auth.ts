@@ -62,6 +62,19 @@ export function isUuid(value: unknown): value is string {
 export const METADATA_SELECT =
   "id,type,prefix,name,audience,scopes,created_at,expires_at,last_used_at,revoked_at";
 
+/**
+ * Resolve `:id` from either `req.query.id` (set by Vercel-style routing or test
+ * shims) or — for Next.js App Router dynamic segments — by parsing it out of
+ * `/api/tokens/<id>` in `req.url`. Returns `undefined` if neither yields a value.
+ */
+export function getTokenIdFromRequest(req: VercelRequest): string | undefined {
+  const fromQuery = req.query?.id;
+  if (typeof fromQuery === "string" && fromQuery.length > 0) return fromQuery;
+  const url = (req as { url?: string }).url ?? "";
+  const m = /\/tokens\/([^/?#]+)/.exec(url);
+  return m ? decodeURIComponent(m[1]) : undefined;
+}
+
 export async function authenticate(
   req: VercelRequest,
   res: VercelResponse,

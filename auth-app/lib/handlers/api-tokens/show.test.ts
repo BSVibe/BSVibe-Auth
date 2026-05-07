@@ -77,6 +77,37 @@ describe("api-tokens/show", () => {
     expect(captured.statusCode).toBe(404);
   });
 
+  it("200 reads id from url path when query.id is absent (Next.js dynamic route)", async () => {
+    const tokenId = "33333333-3333-3333-3333-333333333333";
+    const row = {
+      id: tokenId,
+      type: "api_key",
+      prefix: "bsv_sk_abc",
+      name: "k",
+      audience: ["gateway"],
+      scopes: ["gateway:models:read"],
+      created_at: "2026-05-01T00:00:00Z",
+      expires_at: null,
+      last_used_at: null,
+      revoked_at: null,
+    };
+    const handler = createShowTokenHandler({
+      verifyAccessToken: vi.fn().mockResolvedValue(USER_ID),
+      fetchImpl: makeFetchRows([row]),
+    });
+    const req = makeReq({
+      method: "GET",
+      query: {},
+      url: `https://auth.bsvibe.dev/api/tokens/${tokenId}`,
+      headers: { authorization: "Bearer ok" },
+    });
+    const { res, captured } = makeRes();
+    await handler(req, res);
+    expect(captured.statusCode).toBe(200);
+    const body = captured.body as { token: { id: string } };
+    expect(body.token.id).toBe(tokenId);
+  });
+
   it("200 returns metadata only", async () => {
     const row = {
       id: "33333333-3333-3333-3333-333333333333",

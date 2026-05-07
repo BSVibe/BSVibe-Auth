@@ -151,6 +151,45 @@ describe("api-tokens/revoke", () => {
     expect(audit.data.token_id).toBe(TOKEN_ID);
   });
 
+  it("reads id from url path when query.id is absent (Next.js dynamic route)", async () => {
+    const existingRow = [
+      {
+        id: TOKEN_ID,
+        user_id: USER_ID,
+        tenant_id: TENANT_ID,
+        type: "api_key",
+        revoked_at: null,
+      },
+    ];
+    const { impl, calls } = makeFetchScript([
+      () =>
+        new Response(JSON.stringify(existingRow), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      () =>
+        new Response(JSON.stringify([{ ...existingRow[0], revoked_at: "now" }]), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    ]);
+    const handler = createRevokeTokenHandler({
+      verifyAccessToken: vi.fn().mockResolvedValue(USER_ID),
+      fetchImpl: impl,
+      emitAudit: vi.fn().mockResolvedValue({ ok: true, eventId: "x" }),
+    });
+    const req = makeReq({
+      method: "DELETE",
+      query: {},
+      url: `https://auth.bsvibe.dev/api/tokens/${TOKEN_ID}`,
+      headers: { authorization: "Bearer ok" },
+    });
+    const { res, captured } = makeRes();
+    await handler(req, res);
+    expect(captured.statusCode).toBe(200);
+    expect(calls[0].url).toContain(`id=eq.${TOKEN_ID}`);
+  });
+
   it("idempotent: 200 when already revoked", async () => {
     const revokedRow = [
       {

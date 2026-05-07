@@ -33,10 +33,12 @@ import {
 import {
   bytesToHex,
   decodePatJwtPayload,
+  OPAQUE_PREFIX_LEN,
   sha256Bytes,
   verifyPatJwtSignature,
   type PatJwtPayload,
 } from "../_lib/api-token";
+import { handleCorsAndMethod, supabaseServiceHeaders } from "./_auth";
 
 export interface IntrospectHandlerDeps {
   lookupClient?: (clientId: string) => Promise<OAuthClientRecord | null>;
@@ -153,11 +155,7 @@ async function lookupOpaque(
   url.searchParams.set("revoked_at", "is.null");
   url.searchParams.set("limit", "1");
   const resp = await fetchImpl(url.toString(), {
-    headers: {
-      apikey: env.serviceRoleKey,
-      Authorization: `Bearer ${env.serviceRoleKey}`,
-      Accept: "application/json",
-    },
+    headers: supabaseServiceHeaders(env),
   });
   if (!resp.ok) return null;
   const rows = (await resp.json()) as TokenRow[];
@@ -176,11 +174,7 @@ async function lookupByJti(
   url.searchParams.set("revoked_at", "is.null");
   url.searchParams.set("limit", "1");
   const resp = await fetchImpl(url.toString(), {
-    headers: {
-      apikey: env.serviceRoleKey,
-      Authorization: `Bearer ${env.serviceRoleKey}`,
-      Accept: "application/json",
-    },
+    headers: supabaseServiceHeaders(env),
   });
   if (!resp.ok) return null;
   const rows = (await resp.json()) as TokenRow[];
@@ -199,8 +193,7 @@ function touchLastUsed(
   void fetchImpl(url.toString(), {
     method: "PATCH",
     headers: {
-      apikey: env.serviceRoleKey,
-      Authorization: `Bearer ${env.serviceRoleKey}`,
+      ...supabaseServiceHeaders(env),
       "Content-Type": "application/json",
       Prefer: "return=minimal",
     },
@@ -254,18 +247,7 @@ export function createIntrospectHandler(deps: IntrospectHandlerDeps = {}) {
     });
 
   return async function handler(req: VercelRequest, res: VercelResponse) {
-    if (req.method === "OPTIONS") {
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-      res.setHeader(
-        "Access-Control-Allow-Headers",
-        "Content-Type, Authorization",
-      );
-      return res.status(204).end();
-    }
-    if (req.method !== "POST") {
-      return res.status(405).json({ error: "Method not allowed" });
-    }
+    if (handleCorsAndMethod(req, res, "POST")) return;
 
     // Caller authentication (RFC 7662 §2.1).
     const credentials = parseClientCredentials(req.headers.authorization, {});
@@ -305,8 +287,8 @@ export function createIntrospectHandler(deps: IntrospectHandlerDeps = {}) {
 
     // Branch 1: opaque API key.
     if (looksLikeOpaque(token)) {
-      if (token.length < 13) return inactive();
-      const prefix = token.slice(0, 12);
+      if (token.length <= OPAQUE_PREFIX_LEN) return inactive();
+      const prefix = token.slice(0, OPAQUE_PREFIX_LEN);
       const hash = await sha256Bytes(token);
       const row = await lookupOpaque(env, fetchImpl, prefix, hash).catch(
         () => null,

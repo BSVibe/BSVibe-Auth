@@ -10,8 +10,10 @@ import type { VercelRequest, VercelResponse } from "../_lib/types";
 import {
   authenticate,
   getTokenIdFromRequest,
+  handleCorsAndMethod,
   isUuid,
   METADATA_SELECT,
+  supabaseServiceHeaders,
   verifySupabaseAccessToken,
   type VerifyAccessTokenFn,
 } from "./_auth";
@@ -26,18 +28,7 @@ export function createShowTokenHandler(deps: ShowTokenHandlerDeps = {}) {
   const fetchImpl = deps.fetchImpl ?? fetch;
 
   return async function handler(req: VercelRequest, res: VercelResponse) {
-    if (req.method === "OPTIONS") {
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-      res.setHeader(
-        "Access-Control-Allow-Headers",
-        "Content-Type, Authorization",
-      );
-      return res.status(204).end();
-    }
-    if (req.method !== "GET") {
-      return res.status(405).json({ error: "Method not allowed" });
-    }
+    if (handleCorsAndMethod(req, res, "GET")) return;
 
     const auth = await authenticate(req, res, verifyAccessToken, fetchImpl);
     if (!auth) return;
@@ -55,11 +46,7 @@ export function createShowTokenHandler(deps: ShowTokenHandlerDeps = {}) {
     url.searchParams.set("limit", "1");
 
     const resp = await fetchImpl(url.toString(), {
-      headers: {
-        apikey: env.serviceRoleKey,
-        Authorization: `Bearer ${env.serviceRoleKey}`,
-        Accept: "application/json",
-      },
+      headers: supabaseServiceHeaders(env),
     });
     if (!resp.ok) {
       return res

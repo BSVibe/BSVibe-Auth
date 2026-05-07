@@ -2,29 +2,10 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-
-interface TokenRow {
-  id: string;
-  type: 'pat' | 'api_key';
-  prefix: string | null;
-  name: string;
-  audience: string[];
-  scopes: string[];
-  created_at: string;
-  expires_at: string | null;
-  last_used_at: string | null;
-  revoked_at: string | null;
-}
+import { formatDate, type TokenRow } from './tokens-shared';
 
 interface SessionResponse {
   access_token: string;
-}
-
-function formatDate(value: string | null): string {
-  if (!value) return '—';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString();
 }
 
 export interface TokenDetailPageProps {

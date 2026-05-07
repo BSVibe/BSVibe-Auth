@@ -16,7 +16,9 @@ import {
 import {
   authenticate,
   getTokenIdFromRequest,
+  handleCorsAndMethod,
   isUuid,
+  supabaseServiceHeaders,
   verifySupabaseAccessToken,
   type VerifyAccessTokenFn,
 } from "./_auth";
@@ -49,18 +51,7 @@ export function createRevokeTokenHandler(deps: RevokeTokenHandlerDeps = {}) {
   const now = deps.now ?? Date.now;
 
   return async function handler(req: VercelRequest, res: VercelResponse) {
-    if (req.method === "OPTIONS") {
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Access-Control-Allow-Methods", "DELETE, OPTIONS");
-      res.setHeader(
-        "Access-Control-Allow-Headers",
-        "Content-Type, Authorization",
-      );
-      return res.status(204).end();
-    }
-    if (req.method !== "DELETE") {
-      return res.status(405).json({ error: "Method not allowed" });
-    }
+    if (handleCorsAndMethod(req, res, "DELETE")) return;
 
     const auth = await authenticate(req, res, verifyAccessToken, fetchImpl);
     if (!auth) return;
@@ -71,11 +62,7 @@ export function createRevokeTokenHandler(deps: RevokeTokenHandlerDeps = {}) {
       return res.status(400).json({ error: "id must be a uuid" });
     }
 
-    const restHeaders = {
-      apikey: env.serviceRoleKey,
-      Authorization: `Bearer ${env.serviceRoleKey}`,
-      Accept: "application/json",
-    } as const;
+    const restHeaders = supabaseServiceHeaders(env);
 
     // Lookup — both filters mean a row from another user reads as "not found".
     const lookupUrl = new URL(`${env.supabaseUrl}/rest/v1/tokens`);

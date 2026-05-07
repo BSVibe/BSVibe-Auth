@@ -63,6 +63,38 @@ export const METADATA_SELECT =
   "id,type,prefix,name,audience,scopes,created_at,expires_at,last_used_at,revoked_at";
 
 /**
+ * Handle OPTIONS preflight + non-matching method. Returns true when the
+ * response was already sent (caller bails); false to continue.
+ */
+export function handleCorsAndMethod(
+  req: VercelRequest,
+  res: VercelResponse,
+  method: "GET" | "POST" | "DELETE" | "PATCH",
+): boolean {
+  if (req.method === "OPTIONS") {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", `${method}, OPTIONS`);
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.status(204).end();
+    return true;
+  }
+  if (req.method !== method) {
+    res.status(405).json({ error: "Method not allowed" });
+    return true;
+  }
+  return false;
+}
+
+/** Standard service-role headers for Supabase REST calls. */
+export function supabaseServiceHeaders(env: { serviceRoleKey: string }) {
+  return {
+    apikey: env.serviceRoleKey,
+    Authorization: `Bearer ${env.serviceRoleKey}`,
+    Accept: "application/json",
+  } as const;
+}
+
+/**
  * Resolve `:id` from either `req.query.id` (set by Vercel-style routing or test
  * shims) or — for Next.js App Router dynamic segments — by parsing it out of
  * `/api/tokens/<id>` in `req.url`. Returns `undefined` if neither yields a value.

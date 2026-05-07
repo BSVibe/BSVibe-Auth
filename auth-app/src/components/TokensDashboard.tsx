@@ -7,6 +7,7 @@ import {
   EXPIRY_CATALOG,
   SCOPE_CATALOG,
 } from '../../lib/scopes-catalog';
+import { formatDate, type TokenRow } from './tokens-shared';
 
 interface Tenant {
   id: string;
@@ -20,19 +21,6 @@ interface SessionResponse {
   expires_in: number;
   tenants: Tenant[];
   active_tenant_id: string | null;
-}
-
-interface TokenRow {
-  id: string;
-  type: 'pat' | 'api_key';
-  prefix: string | null;
-  name: string;
-  audience: string[];
-  scopes: string[];
-  created_at: string;
-  expires_at: string | null;
-  last_used_at: string | null;
-  revoked_at: string | null;
 }
 
 interface CreateApiKeyResponse {
@@ -68,13 +56,6 @@ interface RawSecretState {
   apiKey?: string;
   accessToken?: string;
   refreshToken?: string;
-}
-
-function formatDate(value: string | null): string {
-  if (!value) return '—';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString();
 }
 
 export function TokensDashboard() {

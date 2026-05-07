@@ -11,10 +11,15 @@
  * Web Crypto only — no jose / jsonwebtoken dependency.
  */
 
+import { base64UrlEncode, base64UrlEncodeJSON, hmacSha256 } from "./jwt-crypto";
+
 const BASE62_ALPHABET =
   "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
 const OPAQUE_RANDOM_BYTES = 32;
+
+/** Length of the prefix slice stored in the `tokens.prefix` index column. */
+export const OPAQUE_PREFIX_LEN = 12;
 const REFRESH_RANDOM_BYTES = 32;
 
 export type OpaquePrefix = "bsv_sk_" | "bsv_pk_";
@@ -107,27 +112,6 @@ function base62Encode(bytes: Uint8Array): string {
   return out;
 }
 
-function base64UrlEncode(bytes: Uint8Array): string {
-  let bin = "";
-  for (const b of bytes) bin += String.fromCharCode(b);
-  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function base64UrlEncodeJSON(value: unknown): string {
-  return base64UrlEncode(textEncoder.encode(JSON.stringify(value)));
-}
-
-async function hmacSha256(secret: string, message: string): Promise<Uint8Array> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    textEncoder.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const sig = await crypto.subtle.sign("HMAC", key, textEncoder.encode(message));
-  return new Uint8Array(sig);
-}
 
 /**
  * Generate an opaque API key with the given prefix.
@@ -141,7 +125,7 @@ export async function generateOpaqueToken(
   const body = base62Encode(random);
   const raw = `${prefix}${body}`;
   const hash = await sha256Bytes(raw);
-  return { raw, prefix: raw.slice(0, 12), hash };
+  return { raw, prefix: raw.slice(0, OPAQUE_PREFIX_LEN), hash };
 }
 
 /**

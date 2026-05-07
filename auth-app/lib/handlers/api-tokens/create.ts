@@ -27,7 +27,9 @@ import {
 } from "../_lib/tenants";
 import {
   authenticate,
+  handleCorsAndMethod,
   isUuid,
+  supabaseServiceHeaders,
   verifySupabaseAccessToken,
   type VerifyAccessTokenFn,
 } from "./_auth";
@@ -82,18 +84,7 @@ export function createCreateTokenHandler(deps: CreateTokenHandlerDeps = {}) {
   const now = deps.now ?? Date.now;
 
   return async function handler(req: VercelRequest, res: VercelResponse) {
-    if (req.method === "OPTIONS") {
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-      res.setHeader(
-        "Access-Control-Allow-Headers",
-        "Content-Type, Authorization",
-      );
-      return res.status(204).end();
-    }
-    if (req.method !== "POST") {
-      return res.status(405).json({ error: "Method not allowed" });
-    }
+    if (handleCorsAndMethod(req, res, "POST")) return;
 
     const auth = await authenticate(req, res, verifyAccessToken, fetchImpl);
     if (!auth) return;
@@ -190,8 +181,7 @@ export function createCreateTokenHandler(deps: CreateTokenHandlerDeps = {}) {
     const name = body.name;
 
     const restHeaders = {
-      apikey: env.serviceRoleKey,
-      Authorization: `Bearer ${env.serviceRoleKey}`,
+      ...supabaseServiceHeaders(env),
       "Content-Type": "application/json",
     } as const;
 

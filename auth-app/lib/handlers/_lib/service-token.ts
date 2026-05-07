@@ -12,6 +12,8 @@
  * to keep the Vercel function cold-start small.
  */
 
+import { base64UrlEncode, base64UrlEncodeJSON, hmacSha256 } from "./jwt-crypto";
+
 export const SERVICE_AUDIENCES = [
   "bsage",
   "bsgateway",
@@ -142,34 +144,6 @@ export function validateTtl(ttl: unknown): number {
   return ttl;
 }
 
-function base64UrlEncode(bytes: Uint8Array): string {
-  let binary = "";
-  for (const b of bytes) binary += String.fromCharCode(b);
-  return btoa(binary)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-}
-
-function base64UrlEncodeJSON(value: unknown): string {
-  return base64UrlEncode(new TextEncoder().encode(JSON.stringify(value)));
-}
-
-async function hmacSha256(secret: string, message: string): Promise<Uint8Array> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const sig = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(message),
-  );
-  return new Uint8Array(sig);
-}
 
 export async function issueServiceToken(
   input: IssueServiceTokenInput,

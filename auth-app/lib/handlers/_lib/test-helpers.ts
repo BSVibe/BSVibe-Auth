@@ -21,6 +21,7 @@ export interface MockRequestInit {
   query?: Record<string, string>;
   body?: unknown;
   cookies?: Record<string, string>;
+  url?: string;
 }
 
 export function makeReq(init: MockRequestInit = {}): VercelRequest {
@@ -43,6 +44,7 @@ export function makeReq(init: MockRequestInit = {}): VercelRequest {
     query: init.query ?? {},
     body: init.body,
     cookies: init.cookies ?? {},
+    url: init.url,
   } as unknown as VercelRequest;
 }
 

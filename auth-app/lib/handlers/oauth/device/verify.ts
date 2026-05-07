@@ -6,7 +6,7 @@
  * yet expired transition state — replays / unknown codes return 404.
  *
  * On approve we also stamp the row's `user_id` so that the eventual token
- * mint (TASK-006 grant=device_code) can resolve the principal.
+ * mint (grant=device_code) can resolve the principal.
  */
 
 import type { VercelRequest, VercelResponse } from "../../_lib/types";

@@ -1,5 +1,5 @@
 /**
- * E2E coverage for the full token lifecycle (TASK-010).
+ * E2E coverage for the full token lifecycle.
  *
  * Backed by an in-memory mock Supabase started in global-setup.ts so the
  * Next.js server-side fetches (handlers in lib/handlers/api-tokens and

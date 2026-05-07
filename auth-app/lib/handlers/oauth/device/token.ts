@@ -1,9 +1,9 @@
 /**
  * Device-grant token-claim helper.
  *
- * Used by the extended /api/oauth/token grant dispatcher (TASK-006) to
- * atomically consume an approved `device_codes` row and surface the principal
- * + scope/audience to mint the resulting PAT.
+ * Used by the /api/oauth/token grant dispatcher to atomically consume an
+ * approved `device_codes` row and surface the principal + scope/audience to
+ * mint the resulting PAT.
  *
  * NOTE: This file is the *internal helper* `claimDeviceCode` — it is NOT the
  * `/api/oauth/token` HTTP endpoint. Don't confuse with `lib/handlers/oauth/token.ts`.

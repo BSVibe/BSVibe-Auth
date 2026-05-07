@@ -87,6 +87,12 @@ create table if not exists public.refresh_tokens (
 create index if not exists refresh_tokens_token_id_idx
   on public.refresh_tokens (token_id);
 
+-- Refresh rotation atomic PATCH filters by hash + used_at IS NULL.
+-- Partial index keeps it tight: only unconsumed rows participate.
+create index if not exists refresh_tokens_hash_unused_idx
+  on public.refresh_tokens (hash)
+  where used_at is null;
+
 alter table public.refresh_tokens enable row level security;
 
 -- Service-role only. End-user JWTs never see refresh hashes.

@@ -74,9 +74,10 @@ export function hexToBytes(hex: string): Uint8Array {
   return out;
 }
 
+const textEncoder = new TextEncoder();
+
 export async function sha256Bytes(input: string): Promise<Uint8Array> {
-  const bytes = new TextEncoder().encode(input);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const digest = await crypto.subtle.digest("SHA-256", textEncoder.encode(input));
   return new Uint8Array(digest);
 }
 
@@ -113,22 +114,18 @@ function base64UrlEncode(bytes: Uint8Array): string {
 }
 
 function base64UrlEncodeJSON(value: unknown): string {
-  return base64UrlEncode(new TextEncoder().encode(JSON.stringify(value)));
+  return base64UrlEncode(textEncoder.encode(JSON.stringify(value)));
 }
 
 async function hmacSha256(secret: string, message: string): Promise<Uint8Array> {
   const key = await crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(secret),
+    textEncoder.encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],
   );
-  const sig = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(message),
-  );
+  const sig = await crypto.subtle.sign("HMAC", key, textEncoder.encode(message));
   return new Uint8Array(sig);
 }
 

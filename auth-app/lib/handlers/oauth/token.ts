@@ -45,6 +45,8 @@ import {
 import { claimDeviceCode as claimDeviceCodeImpl } from "./device/token";
 import type { ClaimDeviceCodeOutcome } from "./device/token";
 
+const CLIENT_CREDENTIALS_GRANT = "client_credentials";
+const REFRESH_TOKEN_GRANT = "refresh_token";
 const DEVICE_CODE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 const PAT_TTL_S = 60 * 60; // 1h
 const REFRESH_TTL_S = 30 * 24 * 60 * 60; // 30d
@@ -485,7 +487,7 @@ export function createOAuthTokenHandler(deps: OAuthTokenHandlerDeps = {}) {
     }
 
     switch (body.grant_type) {
-      case "client_credentials":
+      case CLIENT_CREDENTIALS_GRANT:
         return handleClientCredentials({
           req,
           res,
@@ -495,7 +497,7 @@ export function createOAuthTokenHandler(deps: OAuthTokenHandlerDeps = {}) {
           lookupClient,
           touchLastUsed,
         });
-      case "refresh_token":
+      case REFRESH_TOKEN_GRANT:
         return handleRefreshToken({
           res,
           body,

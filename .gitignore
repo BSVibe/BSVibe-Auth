@@ -48,3 +48,6 @@ infra/openfga/logs/
 # Supabase CLI runtime artifacts
 supabase/.temp/
 supabase/.branches/
+
+# Ralph Loop orchestration metadata (.agent/tasks.json, PROMPT.md, progress.txt, loop.log)
+.agent/

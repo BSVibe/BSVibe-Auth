@@ -9,6 +9,7 @@ const env = {
 const DEVICE_CODE = "abc.device.code";
 const CLIENT_ID = "device-flow-cli";
 const USER_ID = "11111111-1111-1111-1111-111111111111";
+const TENANT_ID = "22222222-2222-2222-2222-222222222222";
 
 interface RecordedCall {
   method?: string;
@@ -51,6 +52,7 @@ describe("oauth/device/token claimDeviceCode", () => {
               device_code: DEVICE_CODE,
               client_id: CLIENT_ID,
               user_id: USER_ID,
+              tenant_id: TENANT_ID,
               scope: ["gateway:models:read"],
               audience: ["gateway"],
               status: "consumed",
@@ -66,6 +68,7 @@ describe("oauth/device/token claimDeviceCode", () => {
     expect(result.kind).toBe("claimed");
     if (result.kind === "claimed") {
       expect(result.userId).toBe(USER_ID);
+      expect(result.tenantId).toBe(TENANT_ID);
       expect(result.scope).toEqual(["gateway:models:read"]);
       expect(result.audience).toEqual(["gateway"]);
     }

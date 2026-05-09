@@ -39,6 +39,7 @@ async function buildClientRecord(
 ): Promise<OAuthClientRecord> {
   return {
     client_id: validClientId,
+    client_type: "confidential",
     client_secret_hash: await hashClientSecret(validClientSecret),
     tenant_id: tenantId,
     allowed_audiences: ["bsupervisor"],
@@ -179,6 +180,32 @@ describe("oauth/token handler", () => {
     await handler(req, res);
     expect(captured.statusCode).toBe(401);
     expect(captured.body).toMatchObject({ error: "invalid_client" });
+  });
+
+  it("400 unauthorized_client when public client tries client_credentials", async () => {
+    // Public RFC 8628 device-flow clients (e.g. the canonical `cli` row)
+    // ship with no secret and may only mint PATs via the device-code grant.
+    // Reaching the client_credentials path with one is a configuration bug
+    // that must surface with a distinct error code, not the generic
+    // `invalid_client` we'd emit for a wrong secret.
+    const record = await buildClientRecord({
+      client_type: "public",
+      client_secret_hash: null,
+      tenant_id: null,
+    });
+    const lookupClient = vi.fn().mockResolvedValue(record);
+    const handler = createOAuthTokenHandler({ lookupClient });
+    const req = makeReq({
+      method: "POST",
+      headers: {
+        authorization: basicHeader(validClientId, "any-secret-the-cli-might-send"),
+      },
+      body: { grant_type: "client_credentials", audience: "bsupervisor" },
+    });
+    const { res, captured } = makeRes();
+    await handler(req, res);
+    expect(captured.statusCode).toBe(400);
+    expect(captured.body).toMatchObject({ error: "unauthorized_client" });
   });
 
   it("400 invalid_target when audience is not in allowed_audiences", async () => {
@@ -543,8 +570,9 @@ describe("oauth/token handler — device_code grant", () => {
   async function buildClient(): Promise<OAuthClientRecord> {
     return {
       client_id: "device-flow-cli",
-      client_secret_hash: await hashClientSecret("ignored-for-device-flow"),
-      tenant_id: tenantId,
+      client_type: "public",
+      client_secret_hash: null,
+      tenant_id: null,
       allowed_audiences: ["gateway"],
       allowed_scopes: ["gateway:models:read"],
       revoked_at: null,
@@ -577,6 +605,7 @@ describe("oauth/token handler — device_code grant", () => {
       .mockResolvedValue({
         kind: "claimed",
         userId,
+        tenantId,
         scope: ["gateway:models:read"],
         audience: ["gateway"],
         clientId: "device-flow-cli",

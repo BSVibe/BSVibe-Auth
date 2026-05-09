@@ -19,6 +19,11 @@ import {
 export interface DeviceVerifyHandlerDeps {
   verifyAccessToken?: VerifyAccessTokenFn;
   fetchImpl?: typeof fetch;
+  /**
+   * Test seam — override user-tenant lookup. Returns the user's primary
+   * tenant id (or null if the user has no tenant_members rows).
+   */
+  resolvePrimaryTenantId?: (userId: string) => Promise<string | null>;
 }
 
 interface ParsedBody {
@@ -65,6 +70,36 @@ function readBody(req: VercelRequest): ParsedBody {
 export function createDeviceVerifyHandler(deps: DeviceVerifyHandlerDeps = {}) {
   const verifyAccessToken = deps.verifyAccessToken ?? verifySupabaseAccessToken;
   const fetchImpl = deps.fetchImpl ?? fetch;
+  const resolvePrimaryTenantId =
+    deps.resolvePrimaryTenantId ??
+    (async (userId: string) => {
+      const url = process.env.SUPABASE_URL;
+      const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (!url || !key) return null;
+      // Flat select on tenant_members (no nested join) — we only need
+      // the tenant_id, and avoiding `tenants(...)` keeps the request
+      // compatible with the e2e mock supabase that doesn't synthesize
+      // PostgREST joins.
+      const params = new URLSearchParams({
+        select: "tenant_id",
+        user_id: `eq.${userId}`,
+        limit: "1",
+      });
+      const resp = await fetchImpl(
+        `${url.replace(/\/$/, "")}/rest/v1/tenant_members?${params.toString()}`,
+        {
+          headers: {
+            apikey: key,
+            Authorization: `Bearer ${key}`,
+            Accept: "application/json",
+          },
+        },
+      );
+      if (!resp.ok) return null;
+      const rows = (await resp.json()) as Array<{ tenant_id?: string }>;
+      const first = Array.isArray(rows) ? rows[0] : null;
+      return first?.tenant_id ?? null;
+    });
 
   return async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === "OPTIONS") {
@@ -105,7 +140,23 @@ export function createDeviceVerifyHandler(deps: DeviceVerifyHandlerDeps = {}) {
     url.searchParams.set("expires_at", `gt.${nowIso}`);
 
     const patchBody: Record<string, unknown> = { status: newStatus };
-    if (body.action === "approve") patchBody.user_id = userId;
+    if (body.action === "approve") {
+      patchBody.user_id = userId;
+      // Capture the approving user's primary tenant so the device-code
+      // grant can mint a PAT scoped to that tenant. Public clients
+      // (cli oauth_client) carry tenant_id=null on their oauth_clients
+      // row, so this row-level stamp is the only tenant signal the grant
+      // path can read.
+      const tenantId = await resolvePrimaryTenantId(userId);
+      if (!tenantId) {
+        return res.status(403).json({
+          error: "no_tenant_membership",
+          error_description:
+            "user must belong to at least one tenant before approving a device flow",
+        });
+      }
+      patchBody.tenant_id = tenantId;
+    }
 
     const resp = await fetchImpl(url.toString(), {
       method: "PATCH",

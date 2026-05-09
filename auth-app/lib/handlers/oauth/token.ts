@@ -570,6 +570,19 @@ async function handleClientCredentials(ctx: ClientCredentialsCtx) {
     return oauthError(res, 401, "invalid_client");
   }
 
+  // Public clients (RFC 8628 device-flow CLIs) ship with no secret and
+  // are only valid for the device-flow grant. Reject early with the
+  // RFC 6749 §5.2 ``unauthorized_client`` code so the failure mode is
+  // distinct from "secret mismatch".
+  if (record.client_type === "public" || record.client_secret_hash === null) {
+    return oauthError(
+      res,
+      400,
+      "unauthorized_client",
+      "client_credentials grant is not allowed for public clients",
+    );
+  }
+
   const ok = await verifyClientSecret(
     credentials.clientSecret,
     record.client_secret_hash,
@@ -619,7 +632,10 @@ async function handleClientCredentials(ctx: ClientCredentialsCtx) {
         audience,
         scope: scopes,
         subject: `client:${credentials.clientId}`,
-        tenantId: record.tenant_id,
+        // Confidential clients always carry a tenant per the DB CHECK
+        // (`oauth_clients_confidential_complete`); the ?? guards against
+        // TS narrowing alone.
+        tenantId: record.tenant_id ?? undefined,
       },
       { signingSecret, issuer },
     );
@@ -828,6 +844,22 @@ async function handleDeviceCode(ctx: DeviceCodeCtx) {
     );
   }
 
+  // Tenant resolution:
+  //   - public client (cli): row's tenant_id stamped at /verify approve
+  //   - confidential client: oauth_clients.tenant_id (legacy path)
+  // Falling back to client.tenant_id covers the in-flight upgrade window
+  // when device_codes.tenant_id is null because the row was approved
+  // before this verify-handler redeploy.
+  const tenantId = outcome.tenantId ?? client.tenant_id;
+  if (!tenantId) {
+    return oauthError(
+      res,
+      400,
+      "invalid_grant",
+      "device approval is missing a tenant; user must belong to at least one tenant",
+    );
+  }
+
   const tokenId = crypto.randomUUID();
   const jti = crypto.randomUUID();
   const nowMs = now();
@@ -837,7 +869,7 @@ async function handleDeviceCode(ctx: DeviceCodeCtx) {
   const accessToken = await generatePatJwt(
     {
       sub: outcome.userId,
-      tenant: client.tenant_id,
+      tenant: tenantId,
       aud: outcome.audience,
       scope: outcome.scope,
       jti,
@@ -849,7 +881,7 @@ async function handleDeviceCode(ctx: DeviceCodeCtx) {
   const insertedToken = await insertPatTokenRow({
     id: tokenId,
     user_id: outcome.userId,
-    tenant_id: client.tenant_id,
+    tenant_id: tenantId,
     type: "pat",
     jti,
     audience: outcome.audience,
@@ -876,7 +908,7 @@ async function handleDeviceCode(ctx: DeviceCodeCtx) {
 
   void emitAudit({
     eventType: "token.created",
-    tenantId: client.tenant_id,
+    tenantId,
     actor: { type: "user", id: outcome.userId },
     data: {
       token_id: tokenId,

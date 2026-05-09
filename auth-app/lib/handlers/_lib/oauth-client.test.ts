@@ -108,6 +108,7 @@ describe("fetchOAuthClient", () => {
   it("returns a typed record when a row is found", async () => {
     const row: OAuthClientRecord = {
       client_id: "bsgateway-prod",
+      client_type: "confidential",
       client_secret_hash: "pbkdf2-sha256$100$AAA$BBB",
       tenant_id: "11111111-1111-4111-8111-111111111111",
       allowed_audiences: ["bsupervisor"],

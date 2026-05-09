@@ -29,6 +29,7 @@ export type ClaimDeviceCodeOutcome =
   | {
       kind: "claimed";
       userId: string;
+      tenantId: string | null;
       scope: string[];
       audience: string[];
       clientId: string;
@@ -43,6 +44,7 @@ interface DeviceCodeRow {
   device_code: string;
   client_id: string;
   user_id: string | null;
+  tenant_id: string | null;
   scope: unknown;
   audience: unknown;
   status: "pending" | "approved" | "denied" | "expired" | "consumed";
@@ -93,6 +95,7 @@ export async function claimDeviceCode(
     return {
       kind: "claimed",
       userId: row.user_id ?? "",
+      tenantId: row.tenant_id ?? null,
       scope: asStringArray(row.scope),
       audience: asStringArray(row.audience),
       clientId: row.client_id,
@@ -103,7 +106,7 @@ export async function claimDeviceCode(
   const lookupUrl = new URL(`${env.url}/rest/v1/device_codes`);
   lookupUrl.searchParams.set(
     "select",
-    "device_code,client_id,user_id,scope,audience,status,expires_at",
+    "device_code,client_id,user_id,tenant_id,scope,audience,status,expires_at",
   );
   lookupUrl.searchParams.set("device_code", `eq.${deviceCode}`);
   lookupUrl.searchParams.set("client_id", `eq.${clientId}`);

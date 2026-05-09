@@ -17,10 +17,29 @@ const PBKDF2_SALT_BYTES = 16;
 const PBKDF2_HASH_BYTES = 32;
 const HASH_ALGORITHM_TAG = "pbkdf2-sha256";
 
+export type OAuthClientType = "confidential" | "public";
+
 export interface OAuthClientRecord {
   client_id: string;
-  client_secret_hash: string;
-  tenant_id: string;
+  /**
+   * PBKDF2-encoded secret hash. `null` for `client_type='public'` rows
+   * (RFC 8628 device-flow CLIs ship with no secret); always present for
+   * confidential service-to-service backends.
+   */
+  client_secret_hash: string | null;
+  /**
+   * Bound tenant for confidential rows. `null` for public clients — the
+   * issued PAT inherits its tenant from the user that approves at
+   * `/oauth/device/verify`, not from the client row.
+   */
+  tenant_id: string | null;
+  /**
+   * Client class (added by `_e2e` migration `20260509_000001`).
+   * Confidential rows use the existing `client_credentials` grant; public
+   * rows are only valid for the device-flow grant
+   * (`urn:ietf:params:oauth:grant-type:device_code`).
+   */
+  client_type: OAuthClientType;
   allowed_audiences: string[];
   allowed_scopes: string[];
   revoked_at: string | null;
@@ -98,7 +117,7 @@ function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
 
 export async function verifyClientSecret(
   plain: string,
-  encoded: string,
+  encoded: string | null,
 ): Promise<boolean> {
   if (typeof encoded !== "string") return false;
   const parts = encoded.split("$");
@@ -166,7 +185,7 @@ export async function fetchOAuthClient(
 ): Promise<OAuthClientRecord | null> {
   const params = new URLSearchParams({
     select:
-      "client_id,client_secret_hash,tenant_id,allowed_audiences,allowed_scopes,revoked_at",
+      "client_id,client_secret_hash,tenant_id,client_type,allowed_audiences,allowed_scopes,revoked_at",
     client_id: `eq.${clientId}`,
     limit: "1",
   });

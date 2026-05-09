@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createDeviceCodeHandler } from "./code";
 import { makeReq, makeRes } from "../../_lib/test-helpers";
-import { hashClientSecret, type OAuthClientRecord } from "../../_lib/oauth-client";
+import { type OAuthClientRecord } from "../../_lib/oauth-client";
 
 const baseEnv = {
   SUPABASE_URL: "https://test.supabase.co",
@@ -9,7 +9,6 @@ const baseEnv = {
   AUTH_PUBLIC_BASE_URL: "https://auth.bsvibe.dev",
 };
 
-const TENANT_ID = "11111111-1111-1111-1111-111111111111";
 const CLIENT_ID = "device-flow-cli";
 
 async function buildClientRecord(
@@ -17,8 +16,9 @@ async function buildClientRecord(
 ): Promise<OAuthClientRecord> {
   return {
     client_id: CLIENT_ID,
-    client_secret_hash: await hashClientSecret("not-required-for-device-flow"),
-    tenant_id: TENANT_ID,
+    client_type: "public",
+    client_secret_hash: null,
+    tenant_id: null,
     allowed_audiences: ["gateway"],
     allowed_scopes: ["gateway:models:read", "gateway:models:write"],
     revoked_at: null,

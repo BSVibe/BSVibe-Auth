@@ -161,6 +161,44 @@ describe("oauth/device/code", () => {
     expect(captured.body).toMatchObject({ error: "invalid_target" });
   });
 
+  it("accepts comma-separated audience (BSVibe extension)", async () => {
+    // The CLI helper in `bsvibe_cli_base.login_cmd` and the dashboard
+    // form both default to comma-separated audiences. Splitting on
+    // `[,\s]+` accepts either form (RFC 8628 doesn't pin the separator
+    // — `audience` is a BSVibe extension to the device-code body).
+    const record = await buildClientRecord({
+      allowed_audiences: ["gateway", "sage", "nexus", "supervisor"],
+      allowed_scopes: ["gateway:models:read"],
+    });
+    const { impl, calls } = makeFetchScript([
+      () => new Response(null, { status: 201 }),
+    ]);
+    const handler = createDeviceCodeHandler({
+      lookupClient: vi.fn().mockResolvedValue(record),
+      fetchImpl: impl,
+      now: () => Date.UTC(2026, 4, 9, 12, 0, 0),
+    });
+    const req = makeReq({
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        client_id: CLIENT_ID,
+        scope: "gateway:models:read",
+        audience: "gateway,sage,nexus,supervisor",
+      }),
+    });
+    const { res, captured } = makeRes();
+    await handler(req, res);
+    expect(captured.statusCode).toBe(200);
+    const insertBody = calls[0].body as Record<string, unknown>;
+    expect(insertBody.audience).toEqual([
+      "gateway",
+      "sage",
+      "nexus",
+      "supervisor",
+    ]);
+  });
+
   it("200 returns device_code + user_code (XXXX-XXXX) + verification_uri", async () => {
     const record = await buildClientRecord();
     const { impl, calls } = makeFetchScript([

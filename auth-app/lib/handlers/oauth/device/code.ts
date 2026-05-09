@@ -174,7 +174,10 @@ export function createDeviceCodeHandler(deps: DeviceCodeHandlerDeps = {}) {
 
     const requestedAudiences =
       typeof body.audience === "string" && body.audience.trim().length > 0
-        ? body.audience.trim().split(/\s+/)
+        ? body.audience
+            .split(/[\s,]+/)
+            .map((a) => a.trim())
+            .filter((a) => a.length > 0)
         : null;
     const allowedAudiences = new Set(record.allowed_audiences);
     const audience = requestedAudiences ?? record.allowed_audiences.slice();

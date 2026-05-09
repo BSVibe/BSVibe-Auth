@@ -12,14 +12,6 @@ const USER_ID = "11111111-1111-1111-1111-111111111111";
 const USER_CODE = "ABCD-2345";
 const TENANT_ID = "22222222-2222-2222-2222-222222222222";
 
-const fakeTenant = {
-  id: TENANT_ID,
-  name: "primary",
-  type: "personal" as const,
-  role: "owner" as const,
-  plan: "free" as const,
-};
-
 interface RecordedCall {
   method?: string;
   url: string;
@@ -118,7 +110,7 @@ describe("oauth/device/verify", () => {
     const handler = createDeviceVerifyHandler({
       verifyAccessToken: vi.fn().mockResolvedValue(USER_ID),
       fetchImpl: impl,
-      listUserTenants: vi.fn().mockResolvedValue([fakeTenant]),
+      resolvePrimaryTenantId: vi.fn().mockResolvedValue(TENANT_ID),
     });
     const req = makeReq({
       method: "POST",
@@ -149,7 +141,7 @@ describe("oauth/device/verify", () => {
     const handler = createDeviceVerifyHandler({
       verifyAccessToken: vi.fn().mockResolvedValue(USER_ID),
       fetchImpl: impl,
-      listUserTenants: vi.fn().mockResolvedValue([fakeTenant]),
+      resolvePrimaryTenantId: vi.fn().mockResolvedValue(TENANT_ID),
     });
     const req = makeReq({
       method: "POST",
@@ -179,7 +171,7 @@ describe("oauth/device/verify", () => {
     const handler = createDeviceVerifyHandler({
       verifyAccessToken: vi.fn().mockResolvedValue(USER_ID),
       fetchImpl: impl,
-      listUserTenants: vi.fn().mockResolvedValue([]),
+      resolvePrimaryTenantId: vi.fn().mockResolvedValue(null),
     });
     const req = makeReq({
       method: "POST",

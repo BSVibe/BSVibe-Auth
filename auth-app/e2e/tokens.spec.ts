@@ -230,3 +230,117 @@ test.describe("device flow + refresh rotation", () => {
     expect(body.error).toBe("invalid_grant");
   });
 });
+
+/**
+ * Coverage added after the Phase 8 prod-escape post-mortem (May 9 2026).
+ * Each describe-block here targets a specific bug class that slipped into
+ * prod because no e2e exercised the exact request shape:
+ *   - "audience format negative" → bug B1 (#13 — comma vs space split)
+ *   - "/api/tokens via wrapped session JWT" → bug B2 (#15 — proxy 401)
+ * If either describe-block disappears, the regression window reopens.
+ */
+test.describe("device/code body audience format coverage", () => {
+  test("space-separated audience string → 200", async ({ request }) => {
+    const resp = await request.post("/api/oauth/device/code", {
+      headers: { "Content-Type": "application/json" },
+      data: {
+        client_id: TEST_DEVICE_CLIENT_ID,
+        scope: "gateway:models:read",
+        audience: "gateway",
+      },
+    });
+    expect(resp.status()).toBe(200);
+    const body = await resp.json();
+    expect(typeof body.device_code).toBe("string");
+    expect(typeof body.user_code).toBe("string");
+  });
+
+  test("comma-separated audience string → 200 (catches B1 regression)", async ({
+    request,
+  }) => {
+    // bsvibe-cli-base login_cmd and bsvibe-site TokensList both default
+    // to comma-separated audience. Pre-#13 the handler split body.audience
+    // on `\s+` only and returned 400 invalid_target.
+    const resp = await request.post("/api/oauth/device/code", {
+      headers: { "Content-Type": "application/json" },
+      data: {
+        client_id: TEST_DEVICE_CLIENT_ID,
+        scope: "gateway:models:read",
+        audience: "gateway,gateway",
+      },
+    });
+    expect(resp.status()).toBe(200);
+  });
+
+  test("unknown audience → 400 invalid_target (allowlist enforcement)", async ({
+    request,
+  }) => {
+    const resp = await request.post("/api/oauth/device/code", {
+      headers: { "Content-Type": "application/json" },
+      data: {
+        client_id: TEST_DEVICE_CLIENT_ID,
+        scope: "gateway:models:read",
+        audience: "definitely-not-a-real-audience",
+      },
+    });
+    expect(resp.status()).toBe(400);
+    const body = await resp.json();
+    expect(body.error).toBe("invalid_target");
+  });
+});
+
+test.describe("/api/tokens accepts wrapped session JWT (B2 regression)", () => {
+  // bsvibe-site /account/tokens proxy chain:
+  //   cookie (refresh_token) → /api/session GET → wrapped session JWT
+  //   (HS256, USER_JWT_SECRET) → /api/tokens with that Bearer
+  // Pre-#15 the auth-app verifier only knew how to round-trip-verify
+  // raw Supabase JWTs via /auth/v1/user → 401 "Invalid access_token"
+  // for any wrapped JWT. The whole proxy was dead in prod.
+
+  test("Bearer fallback /api/session → wrapped JWT → /api/tokens → 200", async ({
+    request,
+  }) => {
+    // /api/session GET with Authorization: Bearer (Supabase raw JWT) hits
+    // the Bearer fallback path that returns the raw access_token plus
+    // a tenant context. We forward that to /api/tokens. This still
+    // exercises the same auth-app verifier path the cookie flow uses,
+    // since /api/tokens has no Bearer-specific shortcut.
+    const sessionResp = await request.get("/api/session", {
+      headers: { Authorization: `Bearer ${TEST_USER_ACCESS_TOKEN}` },
+    });
+    expect(sessionResp.status()).toBe(200);
+    const sessionBody = await sessionResp.json();
+    const accessToken = sessionBody.access_token as string;
+    expect(typeof accessToken).toBe("string");
+
+    const tokensResp = await request.get("/api/tokens", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    expect(tokensResp.status()).toBe(200);
+    const body = await tokensResp.json();
+    expect(Array.isArray(body.tokens)).toBe(true);
+  });
+
+  test("raw Supabase Bearer → /api/tokens GET → 200 (no regression)", async ({
+    request,
+  }) => {
+    const resp = await request.get("/api/tokens", {
+      headers: { Authorization: `Bearer ${TEST_USER_ACCESS_TOKEN}` },
+    });
+    expect(resp.status()).toBe(200);
+    const body = await resp.json();
+    expect(Array.isArray(body.tokens)).toBe(true);
+  });
+
+  test("garbage Bearer → /api/tokens GET → 401 (no over-permissive fallback)", async ({
+    request,
+  }) => {
+    // The local session-JWT verifier in #15 must reject signatures that
+    // don't match USER_JWT_SECRET. Asserting 401 here pins the negative
+    // path so a future "accept any JWT shape" regression is loud.
+    const resp = await request.get("/api/tokens", {
+      headers: { Authorization: "Bearer not-a-real-jwt" },
+    });
+    expect(resp.status()).toBe(401);
+  });
+});

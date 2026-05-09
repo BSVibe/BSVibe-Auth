@@ -29,6 +29,7 @@ async function buildClientRecord(
 ): Promise<OAuthClientRecord> {
   return {
     client_id: validClientId,
+    client_type: "confidential",
     client_secret_hash: await hashClientSecret(validClientSecret),
     tenant_id: tenantId,
     allowed_audiences: ["gateway"],

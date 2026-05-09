@@ -10,6 +10,15 @@ const baseEnv = {
 
 const USER_ID = "11111111-1111-1111-1111-111111111111";
 const USER_CODE = "ABCD-2345";
+const TENANT_ID = "22222222-2222-2222-2222-222222222222";
+
+const fakeTenant = {
+  id: TENANT_ID,
+  name: "primary",
+  type: "personal" as const,
+  role: "owner" as const,
+  plan: "free" as const,
+};
 
 interface RecordedCall {
   method?: string;
@@ -109,6 +118,7 @@ describe("oauth/device/verify", () => {
     const handler = createDeviceVerifyHandler({
       verifyAccessToken: vi.fn().mockResolvedValue(USER_ID),
       fetchImpl: impl,
+      listUserTenants: vi.fn().mockResolvedValue([fakeTenant]),
     });
     const req = makeReq({
       method: "POST",
@@ -120,7 +130,7 @@ describe("oauth/device/verify", () => {
     expect(captured.statusCode).toBe(404);
   });
 
-  it("approve sets status='approved' + records user_id", async () => {
+  it("approve sets status='approved' + records user_id + stamps tenant_id from primary tenant", async () => {
     const { impl, calls } = makeFetchScript([
       () =>
         new Response(
@@ -130,6 +140,7 @@ describe("oauth/device/verify", () => {
               client_id: "cli",
               status: "approved",
               user_id: USER_ID,
+              tenant_id: TENANT_ID,
             },
           ]),
           { status: 200 },
@@ -138,6 +149,7 @@ describe("oauth/device/verify", () => {
     const handler = createDeviceVerifyHandler({
       verifyAccessToken: vi.fn().mockResolvedValue(USER_ID),
       fetchImpl: impl,
+      listUserTenants: vi.fn().mockResolvedValue([fakeTenant]),
     });
     const req = makeReq({
       method: "POST",
@@ -153,10 +165,33 @@ describe("oauth/device/verify", () => {
     const patchBody = calls[0].body as Record<string, unknown>;
     expect(patchBody.status).toBe("approved");
     expect(patchBody.user_id).toBe(USER_ID);
+    expect(patchBody.tenant_id).toBe(TENANT_ID);
     expect(calls[0].url).toContain(
       `user_code=eq.${encodeURIComponent(USER_CODE)}`,
     );
     expect(calls[0].url).toContain("status=eq.pending");
+  });
+
+  it("approve fails 403 when user has no tenant membership", async () => {
+    const { impl, calls } = makeFetchScript([
+      () => new Response(JSON.stringify([]), { status: 200 }),
+    ]);
+    const handler = createDeviceVerifyHandler({
+      verifyAccessToken: vi.fn().mockResolvedValue(USER_ID),
+      fetchImpl: impl,
+      listUserTenants: vi.fn().mockResolvedValue([]),
+    });
+    const req = makeReq({
+      method: "POST",
+      headers: { authorization: "Bearer u" },
+      body: { user_code: USER_CODE, action: "approve" },
+    });
+    const { res, captured } = makeRes();
+    await handler(req, res);
+    expect(captured.statusCode).toBe(403);
+    expect(captured.body).toMatchObject({ error: "no_tenant_membership" });
+    // The PATCH must NOT have fired — no tenant means no approval.
+    expect(calls).toHaveLength(0);
   });
 
   it("deny sets status='denied'", async () => {

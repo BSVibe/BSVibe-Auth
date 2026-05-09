@@ -15,10 +15,13 @@ import {
   verifySupabaseAccessToken,
   type VerifyAccessTokenFn,
 } from "../../api-tokens/_auth";
+import { listTenantsForUser, type Tenant } from "../../_lib/tenants";
 
 export interface DeviceVerifyHandlerDeps {
   verifyAccessToken?: VerifyAccessTokenFn;
   fetchImpl?: typeof fetch;
+  /** Test seam — override user-tenant lookup. */
+  listUserTenants?: (userId: string) => Promise<Tenant[]>;
 }
 
 interface ParsedBody {
@@ -65,6 +68,14 @@ function readBody(req: VercelRequest): ParsedBody {
 export function createDeviceVerifyHandler(deps: DeviceVerifyHandlerDeps = {}) {
   const verifyAccessToken = deps.verifyAccessToken ?? verifySupabaseAccessToken;
   const fetchImpl = deps.fetchImpl ?? fetch;
+  const listUserTenants =
+    deps.listUserTenants ??
+    ((userId: string) => {
+      const url = process.env.SUPABASE_URL;
+      const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (!url || !key) return Promise.resolve([] as Tenant[]);
+      return listTenantsForUser({ url, serviceRoleKey: key }, userId, fetchImpl);
+    });
 
   return async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === "OPTIONS") {
@@ -105,7 +116,23 @@ export function createDeviceVerifyHandler(deps: DeviceVerifyHandlerDeps = {}) {
     url.searchParams.set("expires_at", `gt.${nowIso}`);
 
     const patchBody: Record<string, unknown> = { status: newStatus };
-    if (body.action === "approve") patchBody.user_id = userId;
+    if (body.action === "approve") {
+      patchBody.user_id = userId;
+      // Capture the approving user's primary tenant so the device-code
+      // grant can mint a PAT scoped to that tenant. Public clients
+      // (cli oauth_client) carry tenant_id=null on their oauth_clients
+      // row, so this row-level stamp is the only tenant signal the grant
+      // path can read.
+      const tenants = await listUserTenants(userId);
+      if (tenants.length === 0) {
+        return res.status(403).json({
+          error: "no_tenant_membership",
+          error_description:
+            "user must belong to at least one tenant before approving a device flow",
+        });
+      }
+      patchBody.tenant_id = tenants[0].id;
+    }
 
     const resp = await fetchImpl(url.toString(), {
       method: "PATCH",

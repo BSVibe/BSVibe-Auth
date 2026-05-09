@@ -27,9 +27,78 @@ export async function verifySupabaseAccessToken(
       Accept: "application/json",
     },
   });
-  if (!resp.ok) return null;
-  const user = (await resp.json()) as { id?: string };
-  return typeof user.id === "string" && user.id.length > 0 ? user.id : null;
+  if (resp.ok) {
+    const user = (await resp.json()) as { id?: string };
+    if (typeof user.id === "string" && user.id.length > 0) return user.id;
+  }
+  // Fallback: the auth-app /api/session GET wraps the raw Supabase access
+  // token in a session JWT (HS256, signed with USER_JWT_SECRET, carries
+  // active_tenant_id + role). Subdomain consumers (bsvibe-site /account
+  // /tokens proxy etc.) hold *that* JWT, not the raw Supabase one — verify
+  // it locally so they aren't forced to re-fetch the raw token.
+  return await verifySessionJwt(accessToken);
+}
+
+async function verifySessionJwt(token: string): Promise<string | null> {
+  const secret = process.env.USER_JWT_SECRET;
+  if (!secret) return null;
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [headerB64, payloadB64, sigB64] = parts;
+  let header: { alg?: string; typ?: string };
+  let payload: { sub?: string; exp?: number };
+  try {
+    header = JSON.parse(base64UrlDecodeString(headerB64));
+    payload = JSON.parse(base64UrlDecodeString(payloadB64));
+  } catch {
+    return null;
+  }
+  if (header.alg !== "HS256") return null;
+  if (typeof payload.exp === "number" && payload.exp * 1000 < Date.now()) {
+    return null;
+  }
+  const expected = await hmacSha256(secret, `${headerB64}.${payloadB64}`);
+  const provided = base64UrlDecodeBytes(sigB64);
+  if (!constantTimeEqual(expected, provided)) return null;
+  return typeof payload.sub === "string" && payload.sub.length > 0
+    ? payload.sub
+    : null;
+}
+
+function base64UrlDecodeString(s: string): string {
+  return new TextDecoder().decode(base64UrlDecodeBytes(s));
+}
+
+function base64UrlDecodeBytes(s: string): Uint8Array {
+  const padded = s.replace(/-/g, "+").replace(/_/g, "/");
+  const padLen = (4 - (padded.length % 4)) % 4;
+  const bin = atob(padded + "=".repeat(padLen));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+async function hmacSha256(secret: string, message: string): Promise<Uint8Array> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(message),
+  );
+  return new Uint8Array(sig);
+}
+
+function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
 }
 
 export interface ResolvedEnv {

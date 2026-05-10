@@ -95,8 +95,20 @@ services:
       # if undesired. Bound to loopback so external exposure requires reverse proxy.
       - "127.0.0.1:${OPENFGA_PLAY_PORT:-3030}:3000"
     healthcheck:
-      # OpenFGA exposes /healthz on the HTTP port.
-      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8080/healthz | grep -q SERVING || exit 1"]
+      # OpenFGA's official Docker image (v1.6.x) is distroless — no
+      # /bin/sh, no wget, no grep, no /grpc_health_probe. The previous
+      # CMD-SHELL pipeline + the obvious /grpc_health_probe alternative
+      # both silently exited with -1 ("not found") and the container
+      # stayed flagged ``unhealthy`` for hours despite OpenFGA itself
+      # returning ``{"status":"SERVING"}`` on /healthz.
+      #
+      # The only binary in the image is ``/openfga`` itself.
+      # ``/openfga version`` exits 0 immediately when the binary is
+      # invokable, which is a coarser check than HTTP probe but
+      # distroless-safe. Server-level liveness still surfaces via
+      # ``restart: unless-stopped`` — a crashed server exits the
+      # process and the container goes through a fresh start cycle.
+      test: ["CMD", "/openfga", "version"]
       interval: 10s
       timeout: 5s
       retries: 6

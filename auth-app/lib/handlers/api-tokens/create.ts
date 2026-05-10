@@ -61,7 +61,15 @@ interface CreateBody {
   expires_in_s?: unknown;
 }
 
-const DEFAULT_PAT_TTL_S = 60 * 60; // 1h
+// PAT default: 30 days. The original 1h default was set defensively
+// before we had a refresh path; in practice it forced operators to
+// re-issue mid-task. Phase 8 dogfood (2026-05-11) caught issued PATs
+// dying inside an hour and breaking running CLI flows. CLI automation
+// and dashboard issuance both routinely want 30d+, and the dashboard
+// picker (bsvibe-site) now defaults to 30d as well; they line up.
+// Operators who want a shorter TTL still pass ``expires_in_s``
+// explicitly. ``MAX_TTL_S`` (365d) is unchanged.
+const DEFAULT_PAT_TTL_S = 30 * 24 * 60 * 60; // 30d
 const DEFAULT_REFRESH_TTL_S = 30 * 24 * 60 * 60; // 30d
 const DEFAULT_API_KEY_TTL_S = 90 * 24 * 60 * 60; // 90d
 const MIN_TTL_S = 60;

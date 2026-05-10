@@ -268,6 +268,38 @@ describe("api-tokens/create", () => {
     expect(JSON.stringify(emittedInput.data)).not.toContain(body.refresh_token);
   });
 
+  it("PAT default expiry is 30 days when expires_in_s is omitted (Phase 8 dogfood)", async () => {
+    // Phase 8 dogfood (2026-05-11) caught issued PATs dying in 1 hour
+    // because the original DEFAULT_PAT_TTL_S was 1h. CLI automation
+    // and dashboard issuance both want 30d+, so the default is now
+    // 30d. Operators who want shorter TTLs still pass expires_in_s.
+    const { impl } = makeInsertFetch();
+    const handler = createCreateTokenHandler({
+      verifyAccessToken: vi.fn().mockResolvedValue(USER_ID),
+      getMembership: vi.fn().mockResolvedValue("owner"),
+      fetchImpl: impl,
+      emitAudit: vi.fn().mockResolvedValue({ ok: true, eventId: "x" }),
+      now: () => 1700000000000,
+    });
+    const req = makeReq({
+      method: "POST",
+      headers: { authorization: "Bearer ok" },
+      body: {
+        type: "pat",
+        name: "default-ttl-pat",
+        tenant_id: TENANT_ID,
+        scopes: ["gateway:models:read"],
+        audience: ["gateway"],
+        // expires_in_s deliberately omitted
+      },
+    });
+    const { res, captured } = makeRes();
+    await handler(req, res);
+    expect(captured.statusCode).toBe(201);
+    const body = captured.body as { expires_in: number };
+    expect(body.expires_in).toBe(30 * 24 * 60 * 60); // 2_592_000s = 30d
+  });
+
   it("502 when token row insert fails", async () => {
     const impl = vi.fn(async () =>
       new Response("err", { status: 500 }),

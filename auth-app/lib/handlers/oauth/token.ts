@@ -48,7 +48,17 @@ import type { ClaimDeviceCodeOutcome } from "./device/token";
 const CLIENT_CREDENTIALS_GRANT = "client_credentials";
 const REFRESH_TOKEN_GRANT = "refresh_token";
 const DEVICE_CODE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
+// Short-lived access tokens for the refresh-grant rotation path. The CLI
+// (and any RFC 6749 §6 client) re-mints these on 401 via refresh_token, so
+// the rotation cadence stays tight without disrupting interactive use.
 const PAT_TTL_S = 60 * 60; // 1h
+// Long-lived PAT for the device-authorization grant. Round 4 Finding 14:
+// MCP clients (Claude Code, IDE plugins) consume the env-var PAT directly
+// and have no built-in refresh path; a 1h TTL forced re-login every hour
+// during dogfood. The refresh_token remains the revocation handle — a
+// compromised device-flow PAT can still be revoked from the site
+// dashboard. 30d matches the /api/tokens manual-PAT default.
+const DEVICE_FLOW_PAT_TTL_S = 30 * 24 * 60 * 60; // 30d
 const REFRESH_TTL_S = 30 * 24 * 60 * 60; // 30d
 
 export interface TokenRecord {
@@ -863,8 +873,14 @@ async function handleDeviceCode(ctx: DeviceCodeCtx) {
   const tokenId = crypto.randomUUID();
   const jti = crypto.randomUUID();
   const nowMs = now();
-  const expSec = Math.floor(nowMs / 1000) + PAT_TTL_S;
-  const expiresAtIso = new Date(nowMs + PAT_TTL_S * 1000).toISOString();
+  // Device-flow PATs use the long TTL — MCP clients without refresh
+  // (Claude Code, IDE plugins) need an envelope big enough that daily
+  // use doesn't hit constant re-login. The refresh_token below still
+  // gives the user a revocation handle for the full DEVICE_FLOW_PAT_TTL_S.
+  const expSec = Math.floor(nowMs / 1000) + DEVICE_FLOW_PAT_TTL_S;
+  const expiresAtIso = new Date(
+    nowMs + DEVICE_FLOW_PAT_TTL_S * 1000,
+  ).toISOString();
 
   const accessToken = await generatePatJwt(
     {
@@ -925,7 +941,7 @@ async function handleDeviceCode(ctx: DeviceCodeCtx) {
     access_token: accessToken,
     refresh_token: refresh.raw,
     token_type: "Bearer",
-    expires_in: PAT_TTL_S,
+    expires_in: DEVICE_FLOW_PAT_TTL_S,
     scope: outcome.scope.join(" "),
   });
 }

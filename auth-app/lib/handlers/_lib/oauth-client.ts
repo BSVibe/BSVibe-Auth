@@ -42,6 +42,12 @@ export interface OAuthClientRecord {
   client_type: OAuthClientType;
   allowed_audiences: string[];
   allowed_scopes: string[];
+  /**
+   * Registered redirect URIs for the OAuth 2.0 authorization_code grant
+   * (RFC 6749 §3.1.2). ``null`` for clients that don't use that grant
+   * (device-flow CLIs, service-to-service confidential clients).
+   */
+  redirect_uris: string[] | null;
   revoked_at: string | null;
 }
 
@@ -185,7 +191,7 @@ export async function fetchOAuthClient(
 ): Promise<OAuthClientRecord | null> {
   const params = new URLSearchParams({
     select:
-      "client_id,client_secret_hash,tenant_id,client_type,allowed_audiences,allowed_scopes,revoked_at",
+      "client_id,client_secret_hash,tenant_id,client_type,allowed_audiences,allowed_scopes,redirect_uris,revoked_at",
     client_id: `eq.${clientId}`,
     limit: "1",
   });

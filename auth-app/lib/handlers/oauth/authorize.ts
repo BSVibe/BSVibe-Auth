@@ -81,7 +81,14 @@ export type AuthorizeOutcome =
   | { kind: "redirect"; location: string }
   | { kind: "render_error"; status: number; error: string; description: string }
   | { kind: "needs_login"; loginPath: string }
-  | { kind: "needs_consent"; client: OAuthClientRow; scope: string[]; audience: string[]; state: string };
+  | {
+      kind: "needs_consent";
+      client: OAuthClientRow;
+      user: { userId: string; tenantId: string | null };
+      scope: string[];
+      audience: string[];
+      state: string;
+    };
 
 /**
  * Pre-flight validation: returns either ``redirect`` (to login or back
@@ -162,6 +169,7 @@ export async function preflightAuthorize(
   return {
     kind: "needs_consent",
     client,
+    user,
     scope: requestedScope,
     audience: requestedAud,
     state,

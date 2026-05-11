@@ -19,6 +19,18 @@ const nextConfig = {
       // /api prefix is an implementation detail callers should not see.
       { source: '/oauth/device/code', destination: '/api/oauth/device/code' },
       { source: '/oauth/device/token', destination: '/api/oauth/device/token' },
+      // Round 5 — OAuth 2.0 authorization_code grant + supporting metadata
+      // (RFC 6749 §4.1 / RFC 7591 DCR / RFC 8414 server metadata / RFC 7009
+      // revocation / RFC 7662 introspection alias). Same /api hiding
+      // pattern as the device-flow endpoints above.
+      { source: '/oauth/authorize', destination: '/api/oauth/authorize' },
+      { source: '/oauth/register', destination: '/api/oauth/register' },
+      { source: '/oauth/revoke', destination: '/api/oauth/revoke' },
+      { source: '/oauth/introspect', destination: '/api/oauth/introspect' },
+      {
+        source: '/.well-known/oauth-authorization-server',
+        destination: '/api/.well-known/oauth-authorization-server',
+      },
     ];
   },
 };

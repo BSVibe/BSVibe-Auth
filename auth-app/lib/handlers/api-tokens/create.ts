@@ -59,6 +59,10 @@ interface CreateBody {
   audience?: unknown;
   tenant_id?: unknown;
   expires_in_s?: unknown;
+  /** When true, mint a never-expiring credential: DB `expires_at` is NULL and
+   *  (for PATs) the JWT is signed without an `exp` claim. Overrides
+   *  `expires_in_s`. UI surfaces this as "No expiry" with an explicit warning. */
+  never_expires?: unknown;
 }
 
 // PAT default: 30 days. The original 1h default was set defensively
@@ -152,8 +156,20 @@ export function createCreateTokenHandler(deps: CreateTokenHandlerDeps = {}) {
         .json({ error: "audience must be a non-empty string array" });
     }
 
-    let ttl: number;
-    if (body.expires_in_s === undefined || body.expires_in_s === null) {
+    if (
+      body.never_expires !== undefined &&
+      typeof body.never_expires !== "boolean"
+    ) {
+      return res
+        .status(400)
+        .json({ error: "never_expires must be a boolean" });
+    }
+    const neverExpires = body.never_expires === true;
+
+    let ttl: number | null;
+    if (neverExpires) {
+      ttl = null;
+    } else if (body.expires_in_s === undefined || body.expires_in_s === null) {
       ttl = body.type === "pat" ? DEFAULT_PAT_TTL_S : DEFAULT_API_KEY_TTL_S;
     } else if (
       typeof body.expires_in_s !== "number" ||
@@ -183,7 +199,8 @@ export function createCreateTokenHandler(deps: CreateTokenHandlerDeps = {}) {
 
     const tokenId = crypto.randomUUID();
     const nowMs = now();
-    const expiresAtIso = new Date(nowMs + ttl * 1000).toISOString();
+    const expiresAtIso: string | null =
+      ttl === null ? null : new Date(nowMs + ttl * 1000).toISOString();
     const scopes = body.scopes as string[];
     const audience = body.audience as string[];
     const name = body.name;
@@ -248,9 +265,17 @@ export function createCreateTokenHandler(deps: CreateTokenHandlerDeps = {}) {
 
     // PAT branch
     const jti = crypto.randomUUID();
-    const expSec = Math.floor(nowMs / 1000) + ttl;
+    const expSec: number | undefined =
+      ttl === null ? undefined : Math.floor(nowMs / 1000) + ttl;
     const pat = await generatePatJwt(
-      { sub: userId, tenant: tenantId, aud: audience, scope: scopes, jti, exp: expSec },
+      {
+        sub: userId,
+        tenant: tenantId,
+        aud: audience,
+        scope: scopes,
+        jti,
+        ...(expSec !== undefined ? { exp: expSec } : {}),
+      },
       { signingSecret, issuer },
     );
     const refresh = await generateRefreshToken();
@@ -343,6 +368,7 @@ export function createCreateTokenHandler(deps: CreateTokenHandlerDeps = {}) {
     });
   };
 }
+
 
 const defaultHandler = createCreateTokenHandler();
 export default defaultHandler;

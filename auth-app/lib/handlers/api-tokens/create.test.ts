@@ -300,6 +300,126 @@ describe("api-tokens/create", () => {
     expect(body.expires_in).toBe(30 * 24 * 60 * 60); // 2_592_000s = 30d
   });
 
+  it("PAT with never_expires=true → expires_at:null, no exp claim, expires_in:null", async () => {
+    const { impl, calls } = makeInsertFetch();
+    const handler = createCreateTokenHandler({
+      verifyAccessToken: vi.fn().mockResolvedValue(USER_ID),
+      getMembership: vi.fn().mockResolvedValue("owner"),
+      fetchImpl: impl,
+      emitAudit: vi.fn().mockResolvedValue({ ok: true, eventId: "x" }),
+      now: () => 1700000000000,
+    });
+    const req = makeReq({
+      method: "POST",
+      headers: { authorization: "Bearer ok" },
+      body: {
+        type: "pat",
+        name: "automation-key",
+        tenant_id: TENANT_ID,
+        scopes: ["gateway:models:read"],
+        audience: ["gateway"],
+        never_expires: true,
+      },
+    });
+    const { res, captured } = makeRes();
+    await handler(req, res);
+    expect(captured.statusCode).toBe(201);
+    const body = captured.body as {
+      access_token: string;
+      expires_at: string | null;
+      expires_in: number | null;
+    };
+    expect(body.expires_at).toBeNull();
+    expect(body.expires_in).toBeNull();
+    const payload = decodePatJwtPayload(body.access_token) as Record<string, unknown>;
+    expect(payload.exp).toBeUndefined();
+    expect("exp" in payload).toBe(false);
+    const tokenInsert = calls.find((c) => c.url.endsWith("/rest/v1/tokens"));
+    const inserted = tokenInsert!.body as Record<string, unknown>;
+    expect(inserted.expires_at).toBeNull();
+  });
+
+  it("api_key with never_expires=true → expires_at:null in DB and response", async () => {
+    const { impl, calls } = makeInsertFetch();
+    const handler = createCreateTokenHandler({
+      verifyAccessToken: vi.fn().mockResolvedValue(USER_ID),
+      getMembership: vi.fn().mockResolvedValue("owner"),
+      fetchImpl: impl,
+      emitAudit: vi.fn().mockResolvedValue({ ok: true, eventId: "x" }),
+    });
+    const req = makeReq({
+      method: "POST",
+      headers: { authorization: "Bearer ok" },
+      body: {
+        type: "api_key",
+        name: "no-expiry-k",
+        tenant_id: TENANT_ID,
+        scopes: [],
+        audience: ["gateway"],
+        never_expires: true,
+      },
+    });
+    const { res, captured } = makeRes();
+    await handler(req, res);
+    expect(captured.statusCode).toBe(201);
+    const body = captured.body as { expires_at: string | null };
+    expect(body.expires_at).toBeNull();
+    const tokenInsert = calls.find((c) => c.url.endsWith("/rest/v1/tokens"));
+    const inserted = tokenInsert!.body as Record<string, unknown>;
+    expect(inserted.expires_at).toBeNull();
+  });
+
+  it("never_expires=true overrides expires_in_s when both provided", async () => {
+    const { impl } = makeInsertFetch();
+    const handler = createCreateTokenHandler({
+      verifyAccessToken: vi.fn().mockResolvedValue(USER_ID),
+      getMembership: vi.fn().mockResolvedValue("owner"),
+      fetchImpl: impl,
+      emitAudit: vi.fn().mockResolvedValue({ ok: true, eventId: "x" }),
+    });
+    const req = makeReq({
+      method: "POST",
+      headers: { authorization: "Bearer ok" },
+      body: {
+        type: "pat",
+        name: "k",
+        tenant_id: TENANT_ID,
+        scopes: ["gateway:models:read"],
+        audience: ["gateway"],
+        expires_in_s: 7200,
+        never_expires: true,
+      },
+    });
+    const { res, captured } = makeRes();
+    await handler(req, res);
+    expect(captured.statusCode).toBe(201);
+    expect((captured.body as { expires_in: number | null }).expires_in).toBeNull();
+  });
+
+  it("400 when never_expires is non-boolean", async () => {
+    const handler = createCreateTokenHandler({
+      verifyAccessToken: vi.fn().mockResolvedValue(USER_ID),
+      getMembership: vi.fn().mockResolvedValue("owner"),
+      fetchImpl: makeInsertFetch().impl,
+      emitAudit: vi.fn(),
+    });
+    const req = makeReq({
+      method: "POST",
+      headers: { authorization: "Bearer ok" },
+      body: {
+        type: "pat",
+        name: "k",
+        tenant_id: TENANT_ID,
+        scopes: [],
+        audience: ["gateway"],
+        never_expires: "yes",
+      },
+    });
+    const { res, captured } = makeRes();
+    await handler(req, res);
+    expect(captured.statusCode).toBe(400);
+  });
+
   it("502 when token row insert fails", async () => {
     const impl = vi.fn(async () =>
       new Response("err", { status: 500 }),

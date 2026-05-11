@@ -17,7 +17,7 @@
  * and 302's back to redirect_uri.
  */
 
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+import type { VercelRequest, VercelResponse } from "../_lib/types";
 
 import {
   commitConsent,

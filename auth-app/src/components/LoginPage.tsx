@@ -6,10 +6,23 @@ import Link from 'next/link';
 import { signInWithPassword, signInWithOAuth } from '../lib/supabase';
 import { validateRedirectUri, buildCallbackUrl } from '../lib/redirect';
 
+// Allow `next` to bounce to a same-origin path on auth.bsvibe.dev (used by
+// /oauth/authorize when the user isn't logged in yet). Path-only to prevent
+// open-redirect — never accept absolute URLs here.
+function isSafeSameOriginPath(next: string | null): next is string {
+  return (
+    typeof next === 'string' &&
+    next.length > 0 &&
+    next.startsWith('/') &&
+    !next.startsWith('//')
+  );
+}
+
 export function LoginPage() {
   const searchParams = useSearchParams();
   const redirectUri = searchParams?.get('redirect_uri') ?? null;
   const state = searchParams?.get('state') ?? null;
+  const nextPath = searchParams?.get('next') ?? null;
   const effectiveRedirectUri = redirectUri || 'https://bsvibe.dev/account';
 
   const [email, setEmail] = useState('');
@@ -60,7 +73,11 @@ export function LoginPage() {
       const result = await signInWithPassword(email, password);
       const session = await createSession(result);
 
-      if (redirectUri) {
+      if (isSafeSameOriginPath(nextPath)) {
+        // Same-origin path (e.g. /oauth/authorize?...). Cookie is set on
+        // .bsvibe.dev; just bounce — no tokens in fragment.
+        window.location.href = nextPath;
+      } else if (redirectUri) {
         // Products consume BSVibe session JWTs, not raw Supabase tokens.
         const callbackUrl = buildCallbackUrl(redirectUri, {
           access_token: session.access_token,

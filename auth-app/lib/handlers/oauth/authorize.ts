@@ -26,7 +26,7 @@
  * arbitrary URI by mangling the request).
  */
 
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+import type { VercelRequest } from "../_lib/types";
 
 import {
   issueAuthorizationCode,
@@ -36,7 +36,7 @@ import {
 const ALLOWED_RESPONSE_TYPES = new Set(["code"]);
 const ALLOWED_CODE_CHALLENGE_METHODS = new Set(["S256"]);
 
-export interface AuthorizeEnv extends IssueAuthorizationCodeEnv {}
+export type AuthorizeEnv = IssueAuthorizationCodeEnv;
 
 export interface AuthorizeDeps {
   /** Resolves the authenticated user from request cookies/headers.
@@ -161,9 +161,11 @@ export async function preflightAuthorize(
   // 6. Caller must be authenticated.
   const user = await deps.resolveUser(req);
   if (user === null) {
-    // The login UX kicks back here once cookies are set.
+    // The login UX kicks back here once cookies are set. Use `next` (a
+    // same-origin path) — LoginPage.tsx treats `next` as a safe in-app
+    // bounce that DOESN'T receive tokens in the URL fragment.
     const back = `/oauth/authorize?${new URLSearchParams(params as Record<string, string>).toString()}`;
-    return { kind: "needs_login", loginPath: `/login?redirect=${encodeURIComponent(back)}` };
+    return { kind: "needs_login", loginPath: `/login?next=${encodeURIComponent(back)}` };
   }
 
   return {
@@ -176,7 +178,7 @@ export async function preflightAuthorize(
   };
 }
 
-export interface CommitConsentInput extends AuthorizeRequest {
+export interface CommitConsentInput extends Omit<AuthorizeRequest, "scope" | "audience"> {
   // Already-validated values passed through from preflight.
   client: OAuthClientRow;
   user: { userId: string; tenantId: string | null };

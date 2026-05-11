@@ -46,8 +46,10 @@ export interface OAuthClientRecord {
    * Registered redirect URIs for the OAuth 2.0 authorization_code grant
    * (RFC 6749 §3.1.2). ``null`` for clients that don't use that grant
    * (device-flow CLIs, service-to-service confidential clients).
+   * Optional in TS so older test fixtures that don't model the column
+   * still typecheck; the PostgREST select always populates it.
    */
-  redirect_uris: string[] | null;
+  redirect_uris?: string[] | null;
   revoked_at: string | null;
 }
 

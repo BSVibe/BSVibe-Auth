@@ -657,11 +657,22 @@ describe("oauth/token handler — device_code grant", () => {
     };
     expect(body.token_type).toBe("Bearer");
     expect(body.scope).toBe("gateway:models:read");
+    // Round 4 Finding 14: device-flow PAT envelope is the long TTL (30d).
+    // MCP clients (Claude Code, IDE plugins) consume the env-var PAT
+    // directly with no refresh-grant path, so the access token must
+    // survive at least daily-use cadence; 30d matches /api/tokens
+    // manual-PAT default and the refresh_token gives revocation.
+    expect(body.expires_in).toBe(30 * 24 * 60 * 60);
     const payload = decodePatJwtPayload<PatJwtPayload>(body.access_token);
     expect(payload.sub).toBe(userId);
     expect(payload.tenant).toBe(tenantId);
     expect(payload.aud).toEqual(["gateway"]);
     expect(payload.token_type).toBe("pat");
+    // The PAT JWT's own exp claim must mirror the same 30d envelope —
+    // not the 1h refresh-grant default. Allow 5s leeway for test clock.
+    const expectedExp = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
+    expect(payload.exp).toBeGreaterThan(expectedExp - 10);
+    expect(payload.exp).toBeLessThan(expectedExp + 10);
 
     expect(claimDeviceCode).toHaveBeenCalledWith(deviceCode, "device-flow-cli");
     expect(insertPatTokenRow).toHaveBeenCalledTimes(1);

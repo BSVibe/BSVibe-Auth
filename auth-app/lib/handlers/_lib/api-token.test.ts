@@ -156,4 +156,19 @@ describe("generatePatJwt", () => {
       generatePatJwt(payload, { signingSecret: "", issuer: ISSUER }),
     ).rejects.toThrow(/signing/i);
   });
+
+  it("omits exp claim when input.exp is undefined (never-expiring PAT)", async () => {
+    const { exp, ...noExpPayload } = payload;
+    void exp;
+    const jwt = await generatePatJwt(noExpPayload, {
+      signingSecret: SIGNING_SECRET,
+      issuer: ISSUER,
+    });
+    expect(await verifyPatJwtSignature(jwt, SIGNING_SECRET)).toBe(true);
+    const decoded = decodePatJwtPayload<PatJwtPayload & { exp?: number }>(jwt);
+    expect(decoded.exp).toBeUndefined();
+    expect("exp" in decoded).toBe(false);
+    expect(decoded.token_type).toBe("pat");
+    expect(decoded.iat).toBe(payload.iat);
+  });
 });

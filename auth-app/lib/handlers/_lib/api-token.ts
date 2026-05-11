@@ -41,7 +41,9 @@ export interface PatJwtInput {
   aud: string[];
   scope: string[];
   jti: string;
-  exp: number;
+  /** When omitted, the JWT is minted without an `exp` claim (never-expiring PAT).
+   *  Server-side revoke + DB `expires_at IS NULL` check is the only safety net. */
+  exp?: number;
   iat?: number;
 }
 
@@ -53,7 +55,7 @@ export interface PatJwtPayload {
   scope: string[];
   jti: string;
   iat: number;
-  exp: number;
+  exp?: number;
   token_type: "pat";
 }
 
@@ -160,8 +162,8 @@ export async function generatePatJwt(
     scope: input.scope,
     jti: input.jti,
     iat,
-    exp: input.exp,
     token_type: "pat",
+    ...(typeof input.exp === "number" ? { exp: input.exp } : {}),
   };
   const header = { alg: "HS256", typ: "JWT" } as const;
   const headerEnc = base64UrlEncodeJSON(header);

@@ -164,7 +164,17 @@ export async function preflightAuthorize(
     // The login UX kicks back here once cookies are set. Use `next` (a
     // same-origin path) — LoginPage.tsx treats `next` as a safe in-app
     // bounce that DOESN'T receive tokens in the URL fragment.
-    const back = `/oauth/authorize?${new URLSearchParams(params as Record<string, string>).toString()}`;
+    //
+    // Build URLSearchParams from filtered entries — passing the whole
+    // ``params`` object to URLSearchParams stringifies ``undefined`` as
+    // the literal string ``"undefined"``, which then trips
+    // ``audience`` / ``state`` validation on the post-login second pass
+    // ("audience not allowed: undefined").
+    const backParams = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (typeof v === "string" && v.length > 0) backParams.set(k, v);
+    }
+    const back = `/oauth/authorize?${backParams.toString()}`;
     return { kind: "needs_login", loginPath: `/login?next=${encodeURIComponent(back)}` };
   }
 

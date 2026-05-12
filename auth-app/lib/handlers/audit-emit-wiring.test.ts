@@ -191,8 +191,8 @@ describe("audit emit wiring", () => {
     const req = makeReq({
       method: "POST",
       body: {
-        audience: "bsage",
-        scope: ["bsage.read", "bsage.write"],
+        audience: "sage",
+        scope: ["sage:read", "sage:write"],
         tenant_id: "tenant-1",
       },
       headers: { authorization: `Bearer ${USER_TOKEN}` },
@@ -206,8 +206,8 @@ describe("audit emit wiring", () => {
     expect(input.tenantId).toBe("tenant-1");
     expect(input.actor).toEqual({ type: "user", id: "user-abc" });
     expect(input.data).toMatchObject({
-      audience: "bsage",
-      scope: ["bsage.read", "bsage.write"],
+      audience: "sage",
+      scope: ["sage:read", "sage:write"],
     });
   });
 });

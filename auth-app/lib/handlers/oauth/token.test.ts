@@ -43,8 +43,8 @@ async function buildClientRecord(
     client_type: "confidential",
     client_secret_hash: await hashClientSecret(validClientSecret),
     tenant_id: tenantId,
-    allowed_audiences: ["bsupervisor"],
-    allowed_scopes: ["bsupervisor.write", "bsupervisor.read"],
+    allowed_audiences: ["supervisor"],
+    allowed_scopes: ["supervisor:write", "supervisor:read"],
     revoked_at: null,
     ...overrides,
   };
@@ -90,7 +90,7 @@ describe("oauth/token handler", () => {
     const req = makeReq({
       method: "POST",
       headers: { authorization: basicHeader(validClientId, validClientSecret) },
-      body: { audience: "bsupervisor" },
+      body: { audience: "supervisor" },
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -103,7 +103,7 @@ describe("oauth/token handler", () => {
     const req = makeReq({
       method: "POST",
       headers: { authorization: basicHeader(validClientId, validClientSecret) },
-      body: { grant_type: "password", audience: "bsupervisor" },
+      body: { grant_type: "password", audience: "supervisor" },
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -128,7 +128,7 @@ describe("oauth/token handler", () => {
     const handler = createOAuthTokenHandler({ lookupClient: vi.fn() });
     const req = makeReq({
       method: "POST",
-      body: { grant_type: "client_credentials", audience: "bsupervisor" },
+      body: { grant_type: "client_credentials", audience: "supervisor" },
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -143,7 +143,7 @@ describe("oauth/token handler", () => {
     const req = makeReq({
       method: "POST",
       headers: { authorization: basicHeader("nope", "x") },
-      body: { grant_type: "client_credentials", audience: "bsupervisor" },
+      body: { grant_type: "client_credentials", audience: "supervisor" },
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -158,7 +158,7 @@ describe("oauth/token handler", () => {
     const req = makeReq({
       method: "POST",
       headers: { authorization: basicHeader(validClientId, "wrong") },
-      body: { grant_type: "client_credentials", audience: "bsupervisor" },
+      body: { grant_type: "client_credentials", audience: "supervisor" },
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -175,7 +175,7 @@ describe("oauth/token handler", () => {
     const req = makeReq({
       method: "POST",
       headers: { authorization: basicHeader(validClientId, validClientSecret) },
-      body: { grant_type: "client_credentials", audience: "bsupervisor" },
+      body: { grant_type: "client_credentials", audience: "supervisor" },
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -201,7 +201,7 @@ describe("oauth/token handler", () => {
       headers: {
         authorization: basicHeader(validClientId, "any-secret-the-cli-might-send"),
       },
-      body: { grant_type: "client_credentials", audience: "bsupervisor" },
+      body: { grant_type: "client_credentials", audience: "supervisor" },
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -211,14 +211,14 @@ describe("oauth/token handler", () => {
 
   it("400 invalid_target when audience is not in allowed_audiences", async () => {
     const record = await buildClientRecord({
-      allowed_audiences: ["bsupervisor"],
+      allowed_audiences: ["supervisor"],
     });
     const lookupClient = vi.fn().mockResolvedValue(record);
     const handler = createOAuthTokenHandler({ lookupClient });
     const req = makeReq({
       method: "POST",
       headers: { authorization: basicHeader(validClientId, validClientSecret) },
-      body: { grant_type: "client_credentials", audience: "bsage" },
+      body: { grant_type: "client_credentials", audience: "sage" },
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -228,7 +228,7 @@ describe("oauth/token handler", () => {
 
   it("400 invalid_scope when requested scope is not allowed", async () => {
     const record = await buildClientRecord({
-      allowed_scopes: ["bsupervisor.write"],
+      allowed_scopes: ["supervisor:write"],
     });
     const lookupClient = vi.fn().mockResolvedValue(record);
     const handler = createOAuthTokenHandler({ lookupClient });
@@ -237,8 +237,8 @@ describe("oauth/token handler", () => {
       headers: { authorization: basicHeader(validClientId, validClientSecret) },
       body: {
         grant_type: "client_credentials",
-        audience: "bsupervisor",
-        scope: "bsupervisor.write bsupervisor.admin",
+        audience: "supervisor",
+        scope: "supervisor:write sage:read",
       },
     });
     const { res, captured } = makeRes();
@@ -258,8 +258,8 @@ describe("oauth/token handler", () => {
       headers: { authorization: basicHeader(validClientId, validClientSecret) },
       body: {
         grant_type: "client_credentials",
-        audience: "bsupervisor",
-        scope: "bsupervisor.write",
+        audience: "supervisor",
+        scope: "supervisor:write",
       },
     });
     const { res, captured } = makeRes();
@@ -274,15 +274,15 @@ describe("oauth/token handler", () => {
     };
     expect(body.token_type).toBe("Bearer");
     expect(body.expires_in).toBeGreaterThan(0);
-    expect(body.scope).toBe("bsupervisor.write");
+    expect(body.scope).toBe("supervisor:write");
 
     const payload = decodeJwtPayload<ServiceTokenPayload>(body.access_token);
-    expect(payload.aud).toBe("bsupervisor");
+    expect(payload.aud).toBe("supervisor");
     expect(payload.sub).toBe(`client:${validClientId}`);
     expect(payload.tenant_id).toBe(tenantId);
     expect(payload.token_type).toBe("service");
     expect(payload.scope.split(" ").sort()).toEqual([
-      "bsupervisor.write",
+      "supervisor:write",
     ]);
 
     expect(touchLastUsed).toHaveBeenCalledWith(validClientId);
@@ -290,7 +290,7 @@ describe("oauth/token handler", () => {
 
   it("defaults scope to allowed_scopes when omitted", async () => {
     const record = await buildClientRecord({
-      allowed_scopes: ["bsupervisor.write", "bsupervisor.read"],
+      allowed_scopes: ["supervisor:write", "supervisor:read"],
     });
     const lookupClient = vi.fn().mockResolvedValue(record);
     const handler = createOAuthTokenHandler({ lookupClient });
@@ -298,7 +298,7 @@ describe("oauth/token handler", () => {
     const req = makeReq({
       method: "POST",
       headers: { authorization: basicHeader(validClientId, validClientSecret) },
-      body: { grant_type: "client_credentials", audience: "bsupervisor" },
+      body: { grant_type: "client_credentials", audience: "supervisor" },
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -306,8 +306,8 @@ describe("oauth/token handler", () => {
     expect(captured.statusCode).toBe(200);
     const body = captured.body as { scope: string; access_token: string };
     expect(body.scope.split(" ").sort()).toEqual([
-      "bsupervisor.read",
-      "bsupervisor.write",
+      "supervisor:read",
+      "supervisor:write",
     ]);
   });
 
@@ -320,7 +320,7 @@ describe("oauth/token handler", () => {
       method: "POST",
       body: {
         grant_type: "client_credentials",
-        audience: "bsupervisor",
+        audience: "supervisor",
         client_id: validClientId,
         client_secret: validClientSecret,
       },
@@ -337,8 +337,8 @@ describe("oauth/token handler", () => {
 
     const formBody = new URLSearchParams({
       grant_type: "client_credentials",
-      audience: "bsupervisor",
-      scope: "bsupervisor.write",
+      audience: "supervisor",
+      scope: "supervisor:write",
     }).toString();
 
     const req = makeReq({
@@ -360,7 +360,7 @@ describe("oauth/token handler", () => {
     const req = makeReq({
       method: "POST",
       headers: { authorization: basicHeader(validClientId, validClientSecret) },
-      body: { grant_type: "client_credentials", audience: "bsupervisor" },
+      body: { grant_type: "client_credentials", audience: "supervisor" },
     });
     const { res, captured } = makeRes();
     await handler(req, res);

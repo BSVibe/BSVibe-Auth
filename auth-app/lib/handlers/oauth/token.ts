@@ -44,10 +44,15 @@ import {
 } from "../_lib/audit-emit";
 import { claimDeviceCode as claimDeviceCodeImpl } from "./device/token";
 import type { ClaimDeviceCodeOutcome } from "./device/token";
+import {
+  claimAuthorizationCode as claimAuthorizationCodeImpl,
+  type ClaimAuthorizationCodeOutcome,
+} from "./authorization_code";
 
 const CLIENT_CREDENTIALS_GRANT = "client_credentials";
 const REFRESH_TOKEN_GRANT = "refresh_token";
 const DEVICE_CODE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
+const AUTHORIZATION_CODE_GRANT = "authorization_code";
 // Short-lived access tokens for the refresh-grant rotation path. The CLI
 // (and any RFC 6749 §6 client) re-mints these on 401 via refresh_token, so
 // the rotation cadence stays tight without disrupting interactive use.
@@ -112,6 +117,13 @@ export interface OAuthTokenHandlerDeps {
     deviceCode: string,
     clientId: string,
   ) => Promise<ClaimDeviceCodeOutcome>;
+  /** authorization_code grant: atomic single-use claim + PKCE verify. */
+  claimAuthorizationCode?: (input: {
+    code: string;
+    expectedClientId: string;
+    redirectUri: string;
+    codeVerifier: string;
+  }) => Promise<ClaimAuthorizationCodeOutcome>;
   /** Insert a tokens row for a freshly-minted device-flow PAT. */
   insertPatTokenRow?: (row: PatTokenInsertRow) => Promise<boolean>;
   /** Audit emit (best-effort). */
@@ -127,6 +139,9 @@ interface ParsedBody {
   client_secret?: string;
   refresh_token?: string;
   device_code?: string;
+  code?: string;
+  redirect_uri?: string;
+  code_verifier?: string;
 }
 
 const PARSED_KEYS = [
@@ -137,6 +152,9 @@ const PARSED_KEYS = [
   "client_secret",
   "refresh_token",
   "device_code",
+  "code",
+  "redirect_uri",
+  "code_verifier",
 ] as const;
 
 function parseFormUrlEncoded(raw: string): ParsedBody {
@@ -413,6 +431,27 @@ function defaultClaimDeviceCode(
   };
 }
 
+function defaultClaimAuthorizationCode(
+  fetchImpl: typeof fetch,
+  now: () => number,
+): (input: {
+  code: string;
+  expectedClientId: string;
+  redirectUri: string;
+  codeVerifier: string;
+}) => Promise<ClaimAuthorizationCodeOutcome> {
+  return (input) => {
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) return Promise.resolve({ kind: "not_found" });
+    return claimAuthorizationCodeImpl(
+      { url, serviceRoleKey: key },
+      input,
+      { fetchImpl, now },
+    );
+  };
+}
+
 function defaultInsertPatTokenRow(
   fetchImpl: typeof fetch,
 ): (row: PatTokenInsertRow) => Promise<boolean> {
@@ -462,6 +501,9 @@ export function createOAuthTokenHandler(deps: OAuthTokenHandlerDeps = {}) {
     deps.revokeTokenForRace ?? defaultRevokeTokenForRace(fetchImpl, now);
   const claimDeviceCode =
     deps.claimDeviceCode ?? defaultClaimDeviceCode(fetchImpl, now);
+  const claimAuthorizationCode =
+    deps.claimAuthorizationCode ??
+    defaultClaimAuthorizationCode(fetchImpl, now);
   const insertPatTokenRow =
     deps.insertPatTokenRow ?? defaultInsertPatTokenRow(fetchImpl);
   const emitAudit = deps.emitAudit ?? defaultEmitAudit(fetchImpl);
@@ -529,6 +571,19 @@ export function createOAuthTokenHandler(deps: OAuthTokenHandlerDeps = {}) {
           now,
           lookupClient,
           claimDeviceCode,
+          insertPatTokenRow,
+          insertRefreshTokenRow,
+          emitAudit,
+        });
+      case AUTHORIZATION_CODE_GRANT:
+        return handleAuthorizationCode({
+          res,
+          body,
+          signingSecret,
+          issuer,
+          now,
+          lookupClient,
+          claimAuthorizationCode,
           insertPatTokenRow,
           insertRefreshTokenRow,
           emitAudit,
@@ -943,6 +998,182 @@ async function handleDeviceCode(ctx: DeviceCodeCtx) {
     token_type: "Bearer",
     expires_in: DEVICE_FLOW_PAT_TTL_S,
     scope: outcome.scope.join(" "),
+  });
+}
+
+interface AuthorizationCodeCtx {
+  res: VercelResponse;
+  body: ParsedBody;
+  signingSecret: string;
+  issuer: string;
+  now: () => number;
+  lookupClient: (id: string) => Promise<OAuthClientRecord | null>;
+  claimAuthorizationCode: (input: {
+    code: string;
+    expectedClientId: string;
+    redirectUri: string;
+    codeVerifier: string;
+  }) => Promise<ClaimAuthorizationCodeOutcome>;
+  insertPatTokenRow: (row: PatTokenInsertRow) => Promise<boolean>;
+  insertRefreshTokenRow: (
+    tokenId: string,
+    hash: Uint8Array,
+    expiresAt: string,
+  ) => Promise<boolean>;
+  emitAudit: (input: AuditEmitInput) => Promise<void>;
+}
+
+async function handleAuthorizationCode(ctx: AuthorizationCodeCtx) {
+  const {
+    res,
+    body,
+    signingSecret,
+    issuer,
+    now,
+    lookupClient,
+    claimAuthorizationCode,
+    insertPatTokenRow,
+    insertRefreshTokenRow,
+    emitAudit,
+  } = ctx;
+
+  if (!body.code) {
+    return oauthError(res, 400, "invalid_request", "code is required");
+  }
+  if (!body.redirect_uri) {
+    return oauthError(res, 400, "invalid_request", "redirect_uri is required");
+  }
+  if (!body.code_verifier) {
+    return oauthError(res, 400, "invalid_request", "code_verifier is required");
+  }
+  if (!body.client_id) {
+    return oauthError(res, 400, "invalid_request", "client_id is required");
+  }
+
+  const client = await lookupClient(body.client_id);
+  if (!client || client.revoked_at !== null) {
+    return oauthError(res, 401, "invalid_client");
+  }
+
+  const outcome = await claimAuthorizationCode({
+    code: body.code,
+    expectedClientId: body.client_id,
+    redirectUri: body.redirect_uri,
+    codeVerifier: body.code_verifier,
+  });
+
+  switch (outcome.kind) {
+    case "not_found":
+    case "used":
+    case "expired":
+    case "client_mismatch":
+    case "redirect_uri_mismatch":
+    case "pkce_mismatch":
+      return oauthError(res, 400, "invalid_grant");
+    case "claimed":
+      break;
+  }
+
+  if (!outcome.userId) {
+    return oauthError(
+      res,
+      400,
+      "invalid_grant",
+      "authorization approval is missing a principal",
+    );
+  }
+
+  // For authorization_code grant the tenantId is stamped at /authorize
+  // commit time from the user's primary tenant. Fall back to the client
+  // row's tenant for backfill safety, then 400 if neither resolves.
+  const tenantId = outcome.tenantId ?? client.tenant_id;
+  if (!tenantId) {
+    return oauthError(
+      res,
+      400,
+      "invalid_grant",
+      "authorization approval is missing a tenant; user must belong to at least one tenant",
+    );
+  }
+
+  // If the request asked for no specific scope/audience, fall through to
+  // the bound code's values. /authorize already validated the bound
+  // values against the client's allow-list.
+  const tokenScopes = outcome.scope;
+  const tokenAudience =
+    outcome.audience.length > 0
+      ? outcome.audience
+      : client.allowed_audiences;
+
+  const tokenId = crypto.randomUUID();
+  const jti = crypto.randomUUID();
+  const nowMs = now();
+  const expSec = Math.floor(nowMs / 1000) + DEVICE_FLOW_PAT_TTL_S;
+  const expiresAtIso = new Date(
+    nowMs + DEVICE_FLOW_PAT_TTL_S * 1000,
+  ).toISOString();
+
+  const accessToken = await generatePatJwt(
+    {
+      sub: outcome.userId,
+      tenant: tenantId,
+      aud: tokenAudience,
+      scope: tokenScopes,
+      jti,
+      exp: expSec,
+    },
+    { signingSecret, issuer },
+  );
+
+  const insertedToken = await insertPatTokenRow({
+    id: tokenId,
+    user_id: outcome.userId,
+    tenant_id: tenantId,
+    type: "pat",
+    jti,
+    audience: tokenAudience,
+    scopes: tokenScopes,
+    name: `authz:${body.client_id}`,
+    expires_at: expiresAtIso,
+  });
+  if (!insertedToken) {
+    return res.status(502).json({ error: "Token insert failed" });
+  }
+
+  const refresh = await generateRefreshToken();
+  const refreshExpiresIso = new Date(
+    nowMs + REFRESH_TTL_S * 1000,
+  ).toISOString();
+  const insertedRefresh = await insertRefreshTokenRow(
+    tokenId,
+    refresh.hash,
+    refreshExpiresIso,
+  );
+  if (!insertedRefresh) {
+    return res.status(502).json({ error: "Refresh token insert failed" });
+  }
+
+  void emitAudit({
+    eventType: "token.created",
+    tenantId,
+    actor: { type: "user", id: outcome.userId },
+    data: {
+      token_id: tokenId,
+      type: "pat",
+      grant: "authorization_code",
+      client_id: body.client_id,
+      scopes: tokenScopes,
+      audience: tokenAudience,
+      jti,
+    },
+  });
+
+  return res.status(200).json({
+    access_token: accessToken,
+    refresh_token: refresh.raw,
+    token_type: "Bearer",
+    expires_in: DEVICE_FLOW_PAT_TTL_S,
+    scope: tokenScopes.join(" "),
   });
 }
 

@@ -36,3 +36,4 @@ test-results
 
 # Local env
 .env
+*.tsbuildinfo

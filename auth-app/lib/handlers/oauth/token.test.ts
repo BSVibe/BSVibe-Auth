@@ -20,6 +20,7 @@ import {
   type PatJwtPayload,
 } from "../_lib/api-token";
 import type { ClaimDeviceCodeOutcome } from "./device/token";
+import type { ClaimAuthorizationCodeOutcome } from "./authorization_code";
 import type { AuditEmitInput } from "../_lib/audit-emit";
 
 const baseEnv = {
@@ -807,5 +808,194 @@ describe("oauth/token handler — device_code grant", () => {
     await handler(req, res);
     expect(captured.statusCode).toBe(401);
     expect(captured.body).toMatchObject({ error: "invalid_client" });
+  });
+});
+
+describe("oauth/token handler — authorization_code grant", () => {
+  let envBackup: NodeJS.ProcessEnv;
+  const userId = "66666666-6666-6666-6666-666666666666";
+  const userTenantId = "77777777-7777-7777-7777-777777777777";
+  const code = "test-authz-code-43chars-base64url-aaaaaaaaaa";
+  const redirectUri = "http://127.0.0.1:54321/callback";
+  const codeVerifier = "test-verifier-43chars-mlnopqrstuvwxyz0123456789AAA";
+
+  beforeEach(() => {
+    envBackup = { ...process.env };
+    Object.assign(process.env, baseEnv);
+  });
+  afterEach(() => {
+    process.env = envBackup;
+    vi.restoreAllMocks();
+  });
+
+  async function buildClient(): Promise<OAuthClientRecord> {
+    return {
+      client_id: "claude-code-mcp",
+      client_type: "public",
+      client_secret_hash: null,
+      tenant_id: null,
+      allowed_audiences: ["gateway", "sage"],
+      allowed_scopes: ["gateway:*", "sage:*"],
+      redirect_uris: [redirectUri],
+      revoked_at: null,
+    };
+  }
+
+  it("400 invalid_request when code/redirect_uri/code_verifier missing", async () => {
+    const handler = createOAuthTokenHandler({ lookupClient: vi.fn() });
+    const req = makeReq({
+      method: "POST",
+      body: { grant_type: "authorization_code", client_id: "claude-code-mcp" },
+    });
+    const { res, captured } = makeRes();
+    await handler(req, res);
+    expect(captured.statusCode).toBe(400);
+    expect(captured.body).toMatchObject({ error: "invalid_request" });
+  });
+
+  it("401 invalid_client when client unknown", async () => {
+    const handler = createOAuthTokenHandler({
+      lookupClient: vi.fn().mockResolvedValue(null),
+    });
+    const req = makeReq({
+      method: "POST",
+      body: {
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: redirectUri,
+        code_verifier: codeVerifier,
+        client_id: "ghost",
+      },
+    });
+    const { res, captured } = makeRes();
+    await handler(req, res);
+    expect(captured.statusCode).toBe(401);
+    expect(captured.body).toMatchObject({ error: "invalid_client" });
+  });
+
+  it("400 invalid_grant on PKCE mismatch", async () => {
+    const lookupClient = vi.fn().mockResolvedValue(await buildClient());
+    const claimAuthorizationCode = vi
+      .fn<
+        (input: {
+          code: string;
+          expectedClientId: string;
+          redirectUri: string;
+          codeVerifier: string;
+        }) => Promise<ClaimAuthorizationCodeOutcome>
+      >()
+      .mockResolvedValue({ kind: "pkce_mismatch" });
+    const handler = createOAuthTokenHandler({
+      lookupClient,
+      claimAuthorizationCode,
+    });
+
+    const req = makeReq({
+      method: "POST",
+      body: {
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: redirectUri,
+        code_verifier: codeVerifier,
+        client_id: "claude-code-mcp",
+      },
+    });
+    const { res, captured } = makeRes();
+    await handler(req, res);
+
+    expect(captured.statusCode).toBe(400);
+    expect(captured.body).toMatchObject({ error: "invalid_grant" });
+  });
+
+  it("200 mints PAT + refresh on claimed authorization_code", async () => {
+    const lookupClient = vi.fn().mockResolvedValue(await buildClient());
+    const claimAuthorizationCode = vi
+      .fn<
+        (input: {
+          code: string;
+          expectedClientId: string;
+          redirectUri: string;
+          codeVerifier: string;
+        }) => Promise<ClaimAuthorizationCodeOutcome>
+      >()
+      .mockResolvedValue({
+        kind: "claimed",
+        clientId: "claude-code-mcp",
+        userId,
+        tenantId: userTenantId,
+        scope: ["gateway:*"],
+        audience: ["gateway"],
+        redirectUri,
+      });
+    const insertPatTokenRow = vi
+      .fn<(row: PatTokenInsertRow) => Promise<boolean>>()
+      .mockResolvedValue(true);
+    const insertRefreshTokenRow = vi
+      .fn<
+        (
+          tokenId: string,
+          hash: Uint8Array,
+          expiresAt: string,
+        ) => Promise<boolean>
+      >()
+      .mockResolvedValue(true);
+    const audits: AuditEmitInput[] = [];
+    const emitAudit = vi
+      .fn<(input: AuditEmitInput) => Promise<void>>()
+      .mockImplementation(async (i) => {
+        audits.push(i);
+      });
+    const handler = createOAuthTokenHandler({
+      lookupClient,
+      claimAuthorizationCode,
+      insertPatTokenRow,
+      insertRefreshTokenRow,
+      emitAudit,
+    });
+
+    const req = makeReq({
+      method: "POST",
+      body: {
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: redirectUri,
+        code_verifier: codeVerifier,
+        client_id: "claude-code-mcp",
+      },
+    });
+    const { res, captured } = makeRes();
+    await handler(req, res);
+
+    expect(captured.statusCode).toBe(200);
+    const body = captured.body as {
+      access_token: string;
+      refresh_token: string;
+      token_type: string;
+      expires_in: number;
+      scope: string;
+    };
+    expect(body.token_type).toBe("Bearer");
+    expect(body.scope).toBe("gateway:*");
+    expect(body.expires_in).toBe(30 * 24 * 60 * 60);
+    const payload = decodePatJwtPayload<PatJwtPayload>(body.access_token);
+    expect(payload.sub).toBe(userId);
+    expect(payload.tenant).toBe(userTenantId);
+    expect(payload.aud).toEqual(["gateway"]);
+    expect(payload.token_type).toBe("pat");
+    expect(
+      audits.find(
+        (a) =>
+          a.eventType === "token.created" &&
+          (a.data as { grant?: string }).grant === "authorization_code",
+      ),
+    ).toBeTruthy();
+    expect(insertPatTokenRow).toHaveBeenCalledTimes(1);
+    expect(insertRefreshTokenRow).toHaveBeenCalledTimes(1);
+    expect(
+      await verifyPatJwtSignature(
+        body.access_token,
+        baseEnv.SERVICE_TOKEN_SIGNING_SECRET,
+      ),
+    ).toBe(true);
   });
 });

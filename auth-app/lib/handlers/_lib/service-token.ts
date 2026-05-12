@@ -15,17 +15,33 @@
 import { base64UrlEncode, base64UrlEncodeJSON, hmacSha256 } from "./jwt-crypto";
 
 export const SERVICE_AUDIENCES = [
+  // Legacy service-to-service REST audiences (Phase 1, Round 4 service-account
+  // backends like bsupervisor-prod / bsage-prod). Token claim ``aud`` carries
+  // these strings; the receiving REST endpoint gates on them.
   "bsage",
   "bsgateway",
   "bsupervisor",
   "bsnexus",
   "bsvibe-auth",
+  // Round 5 MCP-level audiences. The 4 product /mcp endpoints accept these
+  // bare names (no bs- prefix) in the PAT JWT's ``aud`` array — service-
+  // account-minted tokens need the same shape so CI/CD can hit /mcp directly
+  // via client_credentials.
+  "gateway",
+  "sage",
+  "supervisor",
+  "nexus",
 ] as const;
 
 export type ServiceAudience = (typeof SERVICE_AUDIENCES)[number];
 
-const SCOPE_PATTERN = /^[a-z][a-z0-9-]*\.[a-z][a-z0-9-]*$/;
+// Legacy: ``<audience>.<action>`` (e.g. ``bsupervisor.write``).
+const LEGACY_SCOPE_PATTERN = /^[a-z][a-z0-9-]*\.[a-z][a-z0-9-]*$/;
+// MCP: ``<audience>:<resource>`` or ``<audience>:*`` (e.g. ``gateway:*``).
+const MCP_SCOPE_PATTERN =
+  /^[a-z][a-z0-9-]*:(?:\*|[a-z][a-z0-9-]*(?:[._-][a-z0-9]+)*)$/;
 const BSVIBE_AUTH_INTERNAL_SCOPES = new Set(["audit.write"]);
+const MCP_AUDIENCES = new Set(["gateway", "sage", "supervisor", "nexus"]);
 
 const DEFAULT_TTL_S = 3600; // 1 hour
 const MIN_TTL_S = 60;
@@ -105,22 +121,46 @@ export function validateScopes(
       "scope must be a non-empty array of strings",
     );
   }
+  const isMcpAudience = MCP_AUDIENCES.has(audience);
   const seen = new Set<string>();
   for (const s of scopes) {
-    if (typeof s !== "string" || !SCOPE_PATTERN.test(s)) {
+    if (typeof s !== "string") {
       throw new ServiceTokenError(
         "invalid_scope",
         `invalid scope format: ${String(s)}`,
       );
     }
-    if (
-      !s.startsWith(`${audience}.`) &&
-      !(audience === "bsvibe-auth" && BSVIBE_AUTH_INTERNAL_SCOPES.has(s))
-    ) {
-      throw new ServiceTokenError(
-        "scope_audience_mismatch",
-        `scope ${s} does not match audience ${audience}`,
-      );
+    if (isMcpAudience) {
+      // MCP scope grammar: ``<audience>:*`` or ``<audience>:<resource>``.
+      if (!MCP_SCOPE_PATTERN.test(s)) {
+        throw new ServiceTokenError(
+          "invalid_scope",
+          `invalid scope format: ${s}`,
+        );
+      }
+      if (!s.startsWith(`${audience}:`)) {
+        throw new ServiceTokenError(
+          "scope_audience_mismatch",
+          `scope ${s} does not match audience ${audience}`,
+        );
+      }
+    } else {
+      // Legacy grammar: ``<audience>.<action>``.
+      if (!LEGACY_SCOPE_PATTERN.test(s)) {
+        throw new ServiceTokenError(
+          "invalid_scope",
+          `invalid scope format: ${s}`,
+        );
+      }
+      if (
+        !s.startsWith(`${audience}.`) &&
+        !(audience === "bsvibe-auth" && BSVIBE_AUTH_INTERNAL_SCOPES.has(s))
+      ) {
+        throw new ServiceTokenError(
+          "scope_audience_mismatch",
+          `scope ${s} does not match audience ${audience}`,
+        );
+      }
     }
     seen.add(s);
   }

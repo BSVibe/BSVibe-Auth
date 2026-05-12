@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { render, screen, waitFor } from '@testing-library/react';
 
 vi.stubEnv('SUPABASE_URL', 'https://test.supabase.co');
 vi.stubEnv('SUPABASE_ANON_KEY', 'test-anon-key');
@@ -45,11 +44,6 @@ const SESSION_OK = jsonResponse({
 beforeEach(() => {
   vi.clearAllMocks();
   globalThis.__setMockSearchParams('');
-  // jsdom provides a navigator.clipboard but it's read-only. Stub once.
-  Object.defineProperty(globalThis.navigator, 'clipboard', {
-    value: { writeText: vi.fn().mockResolvedValue(undefined) },
-    configurable: true,
-  });
 });
 
 afterEach(() => {
@@ -85,7 +79,7 @@ describe('TokensDashboard', () => {
     });
   });
 
-  it('renders empty state when no tokens exist', async () => {
+  it('renders empty state with device-flow hint when no tokens exist', async () => {
     const fetchMock = makeFetchMock({
       'GET /api/session': SESSION_OK,
       'GET /api/tokens': jsonResponse({ tokens: [] }),
@@ -96,7 +90,8 @@ describe('TokensDashboard', () => {
     render(<TokensDashboard />);
 
     expect(await screen.findByText(/no api tokens yet/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /new token/i })).toBeInTheDocument();
+    expect(screen.getByText(/bsgateway login/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /new token/i })).not.toBeInTheDocument();
   });
 
   it('lists tokens returned by /api/tokens', async () => {
@@ -126,138 +121,5 @@ describe('TokensDashboard', () => {
 
     expect(await screen.findByText('CLI key')).toBeInTheDocument();
     expect(screen.getByText(/bsv_sk_xxxx/)).toBeInTheDocument();
-  });
-
-  it('opens the create modal when "New token" is clicked', async () => {
-    const fetchMock = makeFetchMock({
-      'GET /api/session': SESSION_OK,
-      'GET /api/tokens': jsonResponse({ tokens: [] }),
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const user = userEvent.setup();
-    const { TokensDashboard } = await import('./TokensDashboard');
-    render(<TokensDashboard />);
-
-    await screen.findByText(/no api tokens yet/i);
-    await user.click(screen.getByRole('button', { name: /new token/i }));
-
-    expect(screen.getByRole('dialog', { name: /create token/i })).toBeInTheDocument();
-    expect(screen.getByLabelText(/name/i)).toBeInTheDocument();
-  });
-
-  it('creates an api_key, shows the raw token once, and requires acknowledgement to dismiss', async () => {
-    let listCalls = 0;
-    const fetchMock = makeFetchMock({
-      'GET /api/session': SESSION_OK,
-      'GET /api/tokens': () => {
-        listCalls += 1;
-        return jsonResponse({ tokens: [] });
-      },
-      'POST /api/tokens': (init) => {
-        const body = init?.body ? JSON.parse(init.body as string) : {};
-        expect(body.type).toBe('api_key');
-        expect(body.name).toBe('My CLI');
-        expect(body.tenant_id).toBe(TENANT);
-        expect(body.scopes).toEqual(['gateway:models:read']);
-        expect(body.audience).toEqual(['gateway']);
-        return jsonResponse(
-          {
-            id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-            type: 'api_key',
-            name: 'My CLI',
-            prefix: 'bsv_sk_aaaa',
-            scopes: ['gateway:models:read'],
-            audience: ['gateway'],
-            expires_at: '2026-08-05T00:00:00Z',
-            token: 'bsv_sk_RAW_SECRET_VALUE_xxxxxxxxxxxxxxxxxxxxxx',
-          },
-          201,
-        );
-      },
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const user = userEvent.setup();
-    const { TokensDashboard } = await import('./TokensDashboard');
-    render(<TokensDashboard />);
-
-    await screen.findByText(/no api tokens yet/i);
-    expect(listCalls).toBe(1);
-
-    await user.click(screen.getByRole('button', { name: /new token/i }));
-
-    const dialog = screen.getByRole('dialog', { name: /create token/i });
-    await user.type(within(dialog).getByLabelText(/name/i), 'My CLI');
-    await user.click(within(dialog).getByLabelText(/api key/i));
-    await user.click(within(dialog).getByLabelText(/gateway:models:read/));
-    await user.click(within(dialog).getByLabelText(/^BSGateway$/));
-
-    await user.click(within(dialog).getByRole('button', { name: /create token/i }));
-
-    // Raw secret modal appears
-    const secretDialog = await screen.findByRole('dialog', { name: /save your token/i });
-    expect(within(secretDialog).getByText(/bsv_sk_RAW_SECRET_VALUE/)).toBeInTheDocument();
-
-    // Dismiss is disabled until acknowledged
-    const dismiss = within(secretDialog).getByRole('button', { name: /^done$/i });
-    expect(dismiss).toBeDisabled();
-
-    await user.click(
-      within(secretDialog).getByLabelText(/i have copied/i),
-    );
-    expect(dismiss).not.toBeDisabled();
-
-    await user.click(dismiss);
-
-    // Raw token must not remain on the page after dismiss
-    await waitFor(() =>
-      expect(screen.queryByText(/bsv_sk_RAW_SECRET_VALUE/)).not.toBeInTheDocument(),
-    );
-
-    // List is re-fetched
-    await waitFor(() => expect(listCalls).toBeGreaterThanOrEqual(2));
-  });
-
-  it('shows raw access_token + refresh_token for PAT creation', async () => {
-    const fetchMock = makeFetchMock({
-      'GET /api/session': SESSION_OK,
-      'GET /api/tokens': jsonResponse({ tokens: [] }),
-      'POST /api/tokens': jsonResponse(
-        {
-          id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
-          type: 'pat',
-          name: 'PAT thing',
-          scopes: ['gateway:models:read'],
-          audience: ['gateway'],
-          expires_at: '2026-05-07T01:00:00Z',
-          access_token: 'eyJ.access.token',
-          refresh_token: 'rt-secret-value',
-          token_type: 'Bearer',
-          expires_in: 3600,
-        },
-        201,
-      ),
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const user = userEvent.setup();
-    const { TokensDashboard } = await import('./TokensDashboard');
-    render(<TokensDashboard />);
-
-    await screen.findByText(/no api tokens yet/i);
-    await user.click(screen.getByRole('button', { name: /new token/i }));
-
-    const dialog = screen.getByRole('dialog', { name: /create token/i });
-    await user.type(within(dialog).getByLabelText(/name/i), 'PAT thing');
-    // PAT is the default selection, but click defensively
-    await user.click(within(dialog).getByLabelText(/personal access/i));
-    await user.click(within(dialog).getByLabelText(/gateway:models:read/));
-    await user.click(within(dialog).getByLabelText(/^BSGateway$/));
-    await user.click(within(dialog).getByRole('button', { name: /create token/i }));
-
-    const secretDialog = await screen.findByRole('dialog', { name: /save your token/i });
-    expect(within(secretDialog).getByText(/eyJ\.access\.token/)).toBeInTheDocument();
-    expect(within(secretDialog).getByText(/rt-secret-value/)).toBeInTheDocument();
   });
 });

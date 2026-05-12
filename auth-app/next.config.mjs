@@ -24,6 +24,7 @@ const nextConfig = {
       // revocation / RFC 7662 introspection alias). Same /api hiding
       // pattern as the device-flow endpoints above.
       { source: '/oauth/authorize', destination: '/api/oauth/authorize' },
+      { source: '/oauth/token', destination: '/api/oauth/token' },
       { source: '/oauth/register', destination: '/api/oauth/register' },
       { source: '/oauth/revoke', destination: '/api/oauth/revoke' },
       { source: '/oauth/introspect', destination: '/api/oauth/introspect' },

@@ -3,7 +3,7 @@
  *
  * Phase 0 P0.7 (partial — endpoint only):
  *   - audience-scoped (`aud: bsage|bsgateway|bsupervisor|bsnexus`)
- *   - explicit `scope` claim (space-delimited list, e.g. "bsage.read bsage.write")
+ *   - explicit `scope` claim (space-delimited list, e.g. "sage:read sage:write")
  *   - signed with shared HS256 secret in Phase 0 — Phase 0.4 will introduce
  *     Ed25519 + JWKS rotation. The JWT *shape* is what 4 products will rely on
  *     for the bsvibe-authz verification path; the algorithm is internal.
@@ -14,34 +14,27 @@
 
 import { base64UrlEncode, base64UrlEncodeJSON, hmacSha256 } from "./jwt-crypto";
 
+// Round 5 final: the 4 MCP-aligned audiences. The legacy ``bs*`` REST
+// audiences were removed via the cutover sequence (Steps 1–6). All
+// service-account-issued tokens for /mcp use these bare names.
+//
+// ``bsvibe-auth`` remains as a special internal audience for the audit-
+// relay scope (``audit.write``) that products use to call BSVibe-Auth's
+// /api/audit/events directly.
 export const SERVICE_AUDIENCES = [
-  // Legacy service-to-service REST audiences (Phase 1, Round 4 service-account
-  // backends like bsupervisor-prod / bsage-prod). Token claim ``aud`` carries
-  // these strings; the receiving REST endpoint gates on them.
-  "bsage",
-  "bsgateway",
-  "bsupervisor",
-  "bsnexus",
-  "bsvibe-auth",
-  // Round 5 MCP-level audiences. The 4 product /mcp endpoints accept these
-  // bare names (no bs- prefix) in the PAT JWT's ``aud`` array — service-
-  // account-minted tokens need the same shape so CI/CD can hit /mcp directly
-  // via client_credentials.
   "gateway",
   "sage",
   "supervisor",
   "nexus",
+  "bsvibe-auth",
 ] as const;
 
 export type ServiceAudience = (typeof SERVICE_AUDIENCES)[number];
 
-// Legacy: ``<audience>.<action>`` (e.g. ``bsupervisor.write``).
-const LEGACY_SCOPE_PATTERN = /^[a-z][a-z0-9-]*\.[a-z][a-z0-9-]*$/;
-// MCP: ``<audience>:<resource>`` or ``<audience>:*`` (e.g. ``gateway:*``).
-const MCP_SCOPE_PATTERN =
-  /^[a-z][a-z0-9-]*:(?:\*|[a-z][a-z0-9-]*(?:[._-][a-z0-9]+)*)$/;
+// MCP scope grammar — ``<audience>:<resource>`` (``*`` or identifier with
+// optional ``.``/``_``/``-`` separators in the resource part).
+const SCOPE_PATTERN = /^[a-z][a-z0-9-]*:(?:\*|[a-z][a-z0-9-]*(?:[._-][a-z0-9]+)*)$/;
 const BSVIBE_AUTH_INTERNAL_SCOPES = new Set(["audit.write"]);
-const MCP_AUDIENCES = new Set(["gateway", "sage", "supervisor", "nexus"]);
 
 const DEFAULT_TTL_S = 3600; // 1 hour
 const MIN_TTL_S = 60;
@@ -49,7 +42,7 @@ const MAX_TTL_S = 24 * 3600; // 24 hours — service tokens should refresh.
 
 export interface IssueServiceTokenInput {
   audience: ServiceAudience;
-  /** Scope identifiers, e.g. ["bsage.read", "bsage.write"]. Must all be prefixed with audience. */
+  /** Scope identifiers, e.g. ["sage:read", "sage:write"]. Must all be prefixed with audience. */
   scope: string[];
   /** Optional override TTL in seconds. Default 3600, max 86400. */
   ttlSeconds?: number;
@@ -121,7 +114,6 @@ export function validateScopes(
       "scope must be a non-empty array of strings",
     );
   }
-  const isMcpAudience = MCP_AUDIENCES.has(audience);
   const seen = new Set<string>();
   for (const s of scopes) {
     if (typeof s !== "string") {
@@ -130,32 +122,19 @@ export function validateScopes(
         `invalid scope format: ${String(s)}`,
       );
     }
-    if (isMcpAudience) {
-      // MCP scope grammar: ``<audience>:*`` or ``<audience>:<resource>``.
-      if (!MCP_SCOPE_PATTERN.test(s)) {
+    // bsvibe-auth's internal scopes are an audience-side allow-list
+    // (audit.write etc.) that pre-dates the MCP colon grammar. Accept
+    // them verbatim for that one audience.
+    const isBsvibeAuthInternal =
+      audience === "bsvibe-auth" && BSVIBE_AUTH_INTERNAL_SCOPES.has(s);
+    if (!isBsvibeAuthInternal) {
+      if (!SCOPE_PATTERN.test(s)) {
         throw new ServiceTokenError(
           "invalid_scope",
           `invalid scope format: ${s}`,
         );
       }
       if (!s.startsWith(`${audience}:`)) {
-        throw new ServiceTokenError(
-          "scope_audience_mismatch",
-          `scope ${s} does not match audience ${audience}`,
-        );
-      }
-    } else {
-      // Legacy grammar: ``<audience>.<action>``.
-      if (!LEGACY_SCOPE_PATTERN.test(s)) {
-        throw new ServiceTokenError(
-          "invalid_scope",
-          `invalid scope format: ${s}`,
-        );
-      }
-      if (
-        !s.startsWith(`${audience}.`) &&
-        !(audience === "bsvibe-auth" && BSVIBE_AUTH_INTERNAL_SCOPES.has(s))
-      ) {
         throw new ServiceTokenError(
           "scope_audience_mismatch",
           `scope ${s} does not match audience ${audience}`,

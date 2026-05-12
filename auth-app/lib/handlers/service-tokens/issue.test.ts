@@ -49,8 +49,8 @@ describe("service-tokens/issue handler", () => {
     const req = makeReq({
       method: "POST",
       body: {
-        audience: "bsage",
-        scope: ["bsage.read"],
+        audience: "sage",
+        scope: ["sage:read"],
         tenant_id: "t1",
       },
     });
@@ -72,8 +72,8 @@ describe("service-tokens/issue handler", () => {
     const req = makeReq({
       method: "POST",
       body: {
-        audience: "bsage",
-        scope: ["bsage.read"],
+        audience: "sage",
+        scope: ["sage:read"],
         tenant_id: "t1",
       },
       headers: { authorization: `Bearer ${serviceSubjectToken}` },
@@ -91,7 +91,7 @@ describe("service-tokens/issue handler", () => {
     });
     const req = makeReq({
       method: "POST",
-      body: { scope: ["bsage.read"], tenant_id: "t1" },
+      body: { scope: ["sage:read"], tenant_id: "t1" },
       headers: { authorization: `Bearer ${USER_TOKEN}` },
     });
     const { res, captured } = makeRes();
@@ -122,8 +122,8 @@ describe("service-tokens/issue handler", () => {
     const req = makeReq({
       method: "POST",
       body: {
-        audience: "bsage",
-        scope: ["bsgateway.read"],
+        audience: "sage",
+        scope: ["gateway:read"],
         tenant_id: "t1",
       },
       headers: { authorization: `Bearer ${USER_TOKEN}` },
@@ -139,8 +139,8 @@ describe("service-tokens/issue handler", () => {
     const req = makeReq({
       method: "POST",
       body: {
-        audience: "bsage",
-        scope: ["bsage.read"],
+        audience: "sage",
+        scope: ["sage:read"],
         tenant_id: "t1",
       },
       headers: { authorization: `Bearer ${USER_TOKEN}` },
@@ -156,8 +156,8 @@ describe("service-tokens/issue handler", () => {
     const req = makeReq({
       method: "POST",
       body: {
-        audience: "bsage",
-        scope: ["bsage.read"],
+        audience: "sage",
+        scope: ["sage:read"],
         tenant_id: "t1",
       },
       headers: { authorization: `Bearer ${USER_TOKEN}` },
@@ -173,8 +173,8 @@ describe("service-tokens/issue handler", () => {
     const req = makeReq({
       method: "POST",
       body: {
-        audience: "bsage",
-        scope: ["bsage.read"],
+        audience: "sage",
+        scope: ["sage:read"],
         tenant_id: "t1",
       },
       headers: { authorization: `Bearer ${USER_TOKEN}` },
@@ -190,8 +190,8 @@ describe("service-tokens/issue handler", () => {
     const req = makeReq({
       method: "POST",
       body: {
-        audience: "bsage",
-        scope: ["bsage.read", "bsage.write"],
+        audience: "sage",
+        scope: ["sage:read", "sage:write"],
         tenant_id: "t1",
         ttl_s: 7200,
       },
@@ -212,8 +212,8 @@ describe("service-tokens/issue handler", () => {
     expect(body.token_type).toBe("service");
 
     const payload = decodeJwtPayload<ServiceTokenPayload>(body.access_token);
-    expect(payload.aud).toBe("bsage");
-    expect(payload.scope).toBe("bsage.read bsage.write");
+    expect(payload.aud).toBe("sage");
+    expect(payload.scope).toBe("sage:read sage:write");
     expect(payload.token_type).toBe("service");
     expect(payload.tenant_id).toBe("t1");
     // Subject = "user:<userId>" because the token was issued by a user (delegated).
@@ -234,8 +234,8 @@ describe("service-tokens/issue handler", () => {
     const req = makeReq({
       method: "POST",
       body: {
-        audience: "bsnexus",
-        scope: ["bsnexus.read"],
+        audience: "nexus",
+        scope: ["nexus:read"],
         tenant_id: "t1",
       },
       headers: { authorization: `Bearer ${USER_TOKEN}` },
@@ -254,7 +254,7 @@ describe("service-tokens/issue handler", () => {
     });
     const req = makeReq({
       method: "POST",
-      body: { audience: "bsage", scope: ["bsage.read"] },
+      body: { audience: "sage", scope: ["sage:read"] },
       headers: { authorization: `Bearer ${USER_TOKEN}` },
     });
     const { res, captured } = makeRes();
@@ -270,8 +270,8 @@ describe("service-tokens/issue handler", () => {
     const req = makeReq({
       method: "POST",
       body: {
-        audience: "bsage",
-        scope: ["bsage.read"],
+        audience: "sage",
+        scope: ["sage:read"],
         tenant_id: "t1",
         ttl_s: 30, // below MIN
       },
@@ -291,8 +291,8 @@ describe("service-tokens/issue handler", () => {
     const req = makeReq({
       method: "POST",
       body: {
-        audience: "bsage",
-        scope: ["bsage.read"],
+        audience: "sage",
+        scope: ["sage:read"],
         tenant_id: "t1",
       },
       headers: { authorization: `Bearer ${USER_TOKEN}` },
@@ -309,8 +309,8 @@ describe("service-tokens/issue handler", () => {
     const req = makeReq({
       method: "POST",
       body: {
-        audience: "bsage",
-        scope: ["bsage.read"],
+        audience: "sage",
+        scope: ["sage:read"],
         tenant_id: "t1",
       },
       headers: { authorization: `Bearer ${USER_TOKEN}` },

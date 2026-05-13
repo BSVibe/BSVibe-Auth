@@ -7,7 +7,6 @@
  *   2. /api/session  POST (event: signup_success) -> auth.user.created
  *   3. /api/session  POST (event: login_failed)   -> auth.session.failed
  *   4. /api/session/switch_tenant                 -> auth.tenant.switched
- *   5. /api/service-tokens/issue                  -> authz.service_token.issued
  *
  * Each handler accepts an `emitAudit` dependency for direct injection — the
  * tests assert the call shape matches AuditEventBase + emit_helper contract.
@@ -15,7 +14,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createSessionHandler } from "./session";
 import { createSwitchTenantHandler } from "./session/switch_tenant";
-import { createIssueServiceTokenHandler } from "./service-tokens/issue";
 import { makeReq, makeRes } from "./_lib/test-helpers";
 
 const baseEnv = {
@@ -176,38 +174,6 @@ describe("audit emit wiring", () => {
     expect(input.data).toMatchObject({
       to_tenant_id: "tenant-xyz",
       role: "admin",
-    });
-  });
-
-  it("/api/service-tokens/issue emits authz.service_token.issued", async () => {
-    const getMembership = vi.fn().mockResolvedValue("owner");
-    const verifyAccessToken = vi.fn().mockResolvedValue("user-abc");
-    const emitAudit = vi.fn().mockResolvedValue({ ok: true, eventId: "x" });
-    const handler = createIssueServiceTokenHandler({
-      getMembership,
-      verifyAccessToken,
-      emitAudit,
-    });
-    const req = makeReq({
-      method: "POST",
-      body: {
-        audience: "sage",
-        scope: ["sage:read", "sage:write"],
-        tenant_id: "tenant-1",
-      },
-      headers: { authorization: `Bearer ${USER_TOKEN}` },
-    });
-    const { res, captured } = makeRes();
-    await handler(req, res);
-    expect(captured.statusCode).toBe(200);
-    expect(emitAudit).toHaveBeenCalledTimes(1);
-    const [, input] = emitAudit.mock.calls[0];
-    expect(input.eventType).toBe("authz.service_token.issued");
-    expect(input.tenantId).toBe("tenant-1");
-    expect(input.actor).toEqual({ type: "user", id: "user-abc" });
-    expect(input.data).toMatchObject({
-      audience: "sage",
-      scope: ["sage:read", "sage:write"],
     });
   });
 });

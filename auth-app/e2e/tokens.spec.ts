@@ -1,118 +1,31 @@
 /**
- * E2E coverage for the full token lifecycle.
+ * E2E coverage for the OAuth token surface.
  *
  * Backed by an in-memory mock Supabase started in global-setup.ts so the
  * Next.js server-side fetches (handlers in lib/handlers/api-tokens and
  * lib/handlers/oauth) can land on real PostgREST-shaped responses without
  * needing a live database.
  *
- * Six scenarios:
- *  (1) Bearer-authenticate as test user, create an api_key
- *  (2) Introspect (Basic auth) → active
- *  (3) Revoke
- *  (4) Re-introspect → inactive
- *  (5) Device flow: code → verify-page approve → token claim
- *  (6) Refresh token rotation
+ * Scenarios:
+ *  - Device flow: code → verify-page approve → token claim
+ *  - Refresh token rotation
+ *  - audience format coverage (B1 regression guard)
+ *  - /api/tokens GET via wrapped session JWT (B2 regression guard)
+ *
+ * NOTE: The opaque `bsv_sk_*` api_key lifecycle (issuance via POST /api/tokens
+ * and introspect via the /api/tokens/introspect alias) was retired in
+ * 2026-05-12. PATs are now minted exclusively via the OAuth device flow.
  */
 
 import { test, expect } from "@playwright/test";
 import {
   TEST_DEVICE_CLIENT_ID,
-  TEST_OAUTH_CLIENT_ID,
-  TEST_OAUTH_CLIENT_SECRET,
-  TEST_TENANT_ID,
   TEST_USER_ACCESS_TOKEN,
-  TEST_USER_ID,
 } from "./mock-supabase/seed";
 
 const DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 
-function basicHeader(id: string, secret: string): string {
-  return `Basic ${Buffer.from(`${id}:${secret}`).toString("base64")}`;
-}
-
 test.describe.configure({ mode: "serial" });
-
-test.describe("token lifecycle", () => {
-  let rawApiKey: string;
-  let tokenId: string;
-
-  test("create api_key returns raw token + metadata once", async ({
-    request,
-  }) => {
-    const resp = await request.post("/api/tokens", {
-      headers: {
-        Authorization: `Bearer ${TEST_USER_ACCESS_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      data: {
-        type: "api_key",
-        name: "e2e-test-key",
-        scopes: ["gateway:models:read"],
-        audience: ["gateway"],
-        tenant_id: TEST_TENANT_ID,
-      },
-    });
-    expect(resp.status()).toBe(201);
-    const body = await resp.json();
-    expect(body.type).toBe("api_key");
-    expect(body.token).toMatch(/^bsv_sk_/);
-    expect(body.prefix).toHaveLength(12);
-    expect(body.scopes).toEqual(["gateway:models:read"]);
-    expect(body.audience).toEqual(["gateway"]);
-    rawApiKey = body.token;
-    tokenId = body.id;
-  });
-
-  test("introspect active returns scope + sub", async ({ request }) => {
-    const resp = await request.post("/api/tokens/introspect", {
-      headers: {
-        Authorization: basicHeader(TEST_OAUTH_CLIENT_ID, TEST_OAUTH_CLIENT_SECRET),
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      data: `token=${encodeURIComponent(rawApiKey)}`,
-    });
-    expect(resp.status()).toBe(200);
-    const body = await resp.json();
-    expect(body.active).toBe(true);
-    expect(body.scope).toBe("gateway:models:read");
-    expect(body.token_type).toBe("api_key");
-    expect(body.sub).toBe(TEST_USER_ID);
-    expect(body.tenant).toBe(TEST_TENANT_ID);
-    expect(body.client_id).toBe(TEST_OAUTH_CLIENT_ID);
-  });
-
-  test("introspect rejects bad client_secret with 401", async ({ request }) => {
-    const resp = await request.post("/api/tokens/introspect", {
-      headers: {
-        Authorization: basicHeader(TEST_OAUTH_CLIENT_ID, "wrong-secret"),
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      data: `token=${encodeURIComponent(rawApiKey)}`,
-    });
-    expect(resp.status()).toBe(401);
-  });
-
-  test("revoke marks the token revoked_at", async ({ request }) => {
-    const resp = await request.delete(`/api/tokens/${tokenId}`, {
-      headers: { Authorization: `Bearer ${TEST_USER_ACCESS_TOKEN}` },
-    });
-    expect(resp.status()).toBe(200);
-  });
-
-  test("introspect after revoke returns active=false", async ({ request }) => {
-    const resp = await request.post("/api/tokens/introspect", {
-      headers: {
-        Authorization: basicHeader(TEST_OAUTH_CLIENT_ID, TEST_OAUTH_CLIENT_SECRET),
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      data: `token=${encodeURIComponent(rawApiKey)}`,
-    });
-    expect(resp.status()).toBe(200);
-    const body = await resp.json();
-    expect(body.active).toBe(false);
-  });
-});
 
 test.describe("device flow + refresh rotation", () => {
   let deviceCode: string;

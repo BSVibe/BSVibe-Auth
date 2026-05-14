@@ -62,8 +62,8 @@ const SESSION_OK = jsonResponse({
 const LOOKUP_OK = jsonResponse({
   user_code: USER_CODE,
   client_id: 'cli-tool',
-  scope: ['gateway:models:read'],
-  audience: ['gateway'],
+  scope: ['bsgateway:models:read'],
+  audience: ['bsgateway'],
   expires_at: '2099-01-01T00:00:00Z',
 });
 
@@ -96,9 +96,9 @@ describe('DeviceVerifyPage', () => {
     expect(screen.getByText(USER_CODE)).toBeInTheDocument();
 
     // Scopes + audience must be visible so the user can decide.
-    expect(await screen.findByText('gateway:models:read')).toBeInTheDocument();
+    expect(await screen.findByText('bsgateway:models:read')).toBeInTheDocument();
     expect(screen.getByText('cli-tool')).toBeInTheDocument();
-    expect(screen.getByText('gateway')).toBeInTheDocument();
+    expect(screen.getByText('bsgateway')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /^approve$/i }));
 

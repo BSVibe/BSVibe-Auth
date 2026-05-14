@@ -38,8 +38,8 @@ test.describe("device flow + refresh rotation", () => {
       headers: { "Content-Type": "application/json" },
       data: {
         client_id: TEST_DEVICE_CLIENT_ID,
-        scope: "gateway:models:read",
-        audience: "gateway",
+        scope: "bsgateway:models:read",
+        audience: "bsgateway",
       },
     });
     expect(resp.status()).toBe(200);
@@ -158,8 +158,8 @@ test.describe("device/code body audience format coverage", () => {
       headers: { "Content-Type": "application/json" },
       data: {
         client_id: TEST_DEVICE_CLIENT_ID,
-        scope: "gateway:models:read",
-        audience: "gateway",
+        scope: "bsgateway:models:read",
+        audience: "bsgateway",
       },
     });
     expect(resp.status()).toBe(200);
@@ -178,8 +178,8 @@ test.describe("device/code body audience format coverage", () => {
       headers: { "Content-Type": "application/json" },
       data: {
         client_id: TEST_DEVICE_CLIENT_ID,
-        scope: "gateway:models:read",
-        audience: "gateway,gateway",
+        scope: "bsgateway:models:read",
+        audience: "bsgateway,bsgateway",
       },
     });
     expect(resp.status()).toBe(200);
@@ -192,7 +192,7 @@ test.describe("device/code body audience format coverage", () => {
       headers: { "Content-Type": "application/json" },
       data: {
         client_id: TEST_DEVICE_CLIENT_ID,
-        scope: "gateway:models:read",
+        scope: "bsgateway:models:read",
         audience: "definitely-not-a-real-audience",
       },
     });

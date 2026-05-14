@@ -19,8 +19,8 @@ async function buildClientRecord(
     client_type: "public",
     client_secret_hash: null,
     tenant_id: null,
-    allowed_audiences: ["gateway"],
-    allowed_scopes: ["gateway:models:read", "gateway:models:write"],
+    allowed_audiences: ["bsgateway"],
+    allowed_scopes: ["bsgateway:models:read", "bsgateway:models:write"],
     revoked_at: null,
     ...overrides,
   };
@@ -137,7 +137,7 @@ describe("oauth/device/code", () => {
     const req = makeReq({
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: `client_id=${CLIENT_ID}&scope=gateway:tenants:write`,
+      body: `client_id=${CLIENT_ID}&scope=bsgateway:tenants:write`,
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -153,7 +153,7 @@ describe("oauth/device/code", () => {
     const req = makeReq({
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: `client_id=${CLIENT_ID}&audience=nexus`,
+      body: `client_id=${CLIENT_ID}&audience=bsnexus`,
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -167,8 +167,8 @@ describe("oauth/device/code", () => {
     // `[,\s]+` accepts either form (RFC 8628 doesn't pin the separator
     // — `audience` is a BSVibe extension to the device-code body).
     const record = await buildClientRecord({
-      allowed_audiences: ["gateway", "sage", "nexus", "supervisor"],
-      allowed_scopes: ["gateway:models:read"],
+      allowed_audiences: ["bsgateway", "bsage", "bsnexus", "bsupervisor"],
+      allowed_scopes: ["bsgateway:models:read"],
     });
     const { impl, calls } = makeFetchScript([
       () => new Response(null, { status: 201 }),
@@ -183,8 +183,8 @@ describe("oauth/device/code", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         client_id: CLIENT_ID,
-        scope: "gateway:models:read",
-        audience: "gateway,sage,nexus,supervisor",
+        scope: "bsgateway:models:read",
+        audience: "bsgateway,bsage,bsnexus,bsupervisor",
       }),
     });
     const { res, captured } = makeRes();
@@ -192,10 +192,10 @@ describe("oauth/device/code", () => {
     expect(captured.statusCode).toBe(200);
     const insertBody = calls[0].body as Record<string, unknown>;
     expect(insertBody.audience).toEqual([
-      "gateway",
-      "sage",
-      "nexus",
-      "supervisor",
+      "bsgateway",
+      "bsage",
+      "bsnexus",
+      "bsupervisor",
     ]);
   });
 
@@ -212,7 +212,7 @@ describe("oauth/device/code", () => {
     const req = makeReq({
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: `client_id=${CLIENT_ID}&scope=gateway:models:read&audience=gateway`,
+      body: `client_id=${CLIENT_ID}&scope=bsgateway:models:read&audience=bsgateway`,
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -242,8 +242,8 @@ describe("oauth/device/code", () => {
     const insertBody = calls[0].body as Record<string, unknown>;
     expect(insertBody.status).toBe("pending");
     expect(insertBody.client_id).toBe(CLIENT_ID);
-    expect(insertBody.scope).toEqual(["gateway:models:read"]);
-    expect(insertBody.audience).toEqual(["gateway"]);
+    expect(insertBody.scope).toEqual(["bsgateway:models:read"]);
+    expect(insertBody.audience).toEqual(["bsgateway"]);
     expect(insertBody.user_id).toBeNull();
     expect(typeof insertBody.expires_at).toBe("string");
   });
@@ -266,7 +266,7 @@ describe("oauth/device/code", () => {
     await handler(req, res);
     expect(captured.statusCode).toBe(200);
     const body = (calls[0].body ?? {}) as Record<string, unknown>;
-    expect(body.scope).toEqual(["gateway:models:read", "gateway:models:write"]);
+    expect(body.scope).toEqual(["bsgateway:models:read", "bsgateway:models:write"]);
   });
 
   it("502 when device_codes insert fails", async () => {

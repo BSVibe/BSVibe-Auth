@@ -32,8 +32,8 @@ async function buildClientRecord(
     client_type: "confidential",
     client_secret_hash: await hashClientSecret(validClientSecret),
     tenant_id: tenantId,
-    allowed_audiences: ["gateway"],
-    allowed_scopes: ["gateway:models:read"],
+    allowed_audiences: ["bsgateway"],
+    allowed_scopes: ["bsgateway:models:read"],
     revoked_at: null,
     ...overrides,
   };
@@ -174,8 +174,8 @@ describe("api-tokens/introspect", () => {
       user_id: userId,
       tenant_id: tenantId,
       type: "api_key",
-      audience: ["gateway"],
-      scopes: ["gateway:models:read", "gateway:models:write"],
+      audience: ["bsgateway"],
+      scopes: ["bsgateway:models:read", "bsgateway:models:write"],
       expires_at: expIso,
       revoked_at: null,
     };
@@ -211,8 +211,8 @@ describe("api-tokens/introspect", () => {
     expect(body.active).toBe(true);
     expect(body.sub).toBe(userId);
     expect(body.tenant).toBe(tenantId);
-    expect(body.aud).toEqual(["gateway"]);
-    expect(body.scope).toBe("gateway:models:read gateway:models:write");
+    expect(body.aud).toEqual(["bsgateway"]);
+    expect(body.scope).toBe("bsgateway:models:read bsgateway:models:write");
     expect(body.client_id).toBe(validClientId);
     expect(body.token_type).toBe("api_key");
     // confirm body.exp present and an integer epoch second
@@ -292,8 +292,8 @@ describe("api-tokens/introspect", () => {
       {
         sub: userId,
         tenant: tenantId,
-        aud: ["gateway"],
-        scope: ["gateway:models:read"],
+        aud: ["bsgateway"],
+        scope: ["bsgateway:models:read"],
         jti,
         exp,
       },
@@ -308,8 +308,8 @@ describe("api-tokens/introspect", () => {
       user_id: userId,
       tenant_id: tenantId,
       type: "pat",
-      audience: ["gateway"],
-      scopes: ["gateway:models:read"],
+      audience: ["bsgateway"],
+      scopes: ["bsgateway:models:read"],
       expires_at: new Date(exp * 1000).toISOString(),
       revoked_at: null,
     };
@@ -341,7 +341,7 @@ describe("api-tokens/introspect", () => {
     expect(body.sub).toBe(userId);
     expect(body.tenant).toBe(tenantId);
     expect(body.token_type).toBe("pat");
-    expect(body.scope).toBe("gateway:models:read");
+    expect(body.scope).toBe("bsgateway:models:read");
     expect(body.exp).toBe(exp);
     expect(body.jti).toBe(jti);
   });
@@ -353,8 +353,8 @@ describe("api-tokens/introspect", () => {
       {
         sub: userId,
         tenant: tenantId,
-        aud: ["gateway"],
-        scope: ["gateway:models:read"],
+        aud: ["bsgateway"],
+        scope: ["bsgateway:models:read"],
         jti: "44444444-4444-4444-4444-444444444444",
         exp,
       },
@@ -387,8 +387,8 @@ describe("api-tokens/introspect", () => {
       {
         sub: userId,
         tenant: tenantId,
-        aud: ["gateway"],
-        scope: ["gateway:models:read"],
+        aud: ["bsgateway"],
+        scope: ["bsgateway:models:read"],
         jti: "44444444-4444-4444-4444-444444444444",
         exp,
       },
@@ -423,8 +423,8 @@ describe("api-tokens/introspect", () => {
       {
         sub: userId,
         tenant: tenantId,
-        aud: ["gateway"],
-        scope: ["gateway:models:read"],
+        aud: ["bsgateway"],
+        scope: ["bsgateway:models:read"],
         jti: "44444444-4444-4444-4444-444444444444",
         exp,
       },
@@ -462,8 +462,8 @@ describe("api-tokens/introspect", () => {
       user_id: userId,
       tenant_id: tenantId,
       type: "api_key",
-      audience: ["gateway"],
-      scopes: ["gateway:models:read"],
+      audience: ["bsgateway"],
+      scopes: ["bsgateway:models:read"],
       expires_at: null,
       revoked_at: null,
       token_hash: "should-never-leak",

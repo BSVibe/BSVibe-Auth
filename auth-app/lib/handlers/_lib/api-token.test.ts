@@ -111,8 +111,8 @@ describe("generatePatJwt", () => {
   const payload = {
     sub: "user-123",
     tenant: "tenant-abc",
-    aud: ["gateway", "sage"],
-    scope: ["gateway:models:read"],
+    aud: ["bsgateway", "bsage"],
+    scope: ["bsgateway:models:read"],
     jti: "11111111-1111-1111-1111-111111111111",
     exp: now + 3600,
     iat: now,

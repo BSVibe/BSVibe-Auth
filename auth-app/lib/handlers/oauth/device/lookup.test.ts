@@ -94,8 +94,8 @@ describe("oauth/device/lookup", () => {
           {
             user_code: USER_CODE,
             client_id: "device-client",
-            scope: ["gateway:models:read", "gateway:routing:read"],
-            audience: ["gateway"],
+            scope: ["bsgateway:models:read", "bsgateway:routing:read"],
+            audience: ["bsgateway"],
             expires_at: "2099-01-01T00:00:00Z",
             status: "pending",
           },
@@ -125,10 +125,10 @@ describe("oauth/device/lookup", () => {
     expect(body.user_code).toBe(USER_CODE);
     expect(body.client_id).toBe("device-client");
     expect(body.scope).toEqual([
-      "gateway:models:read",
-      "gateway:routing:read",
+      "bsgateway:models:read",
+      "bsgateway:routing:read",
     ]);
-    expect(body.audience).toEqual(["gateway"]);
+    expect(body.audience).toEqual(["bsgateway"]);
     // Should filter on status=pending (not consumed/expired/etc.).
     expect(fetchCalls[0]).toMatch(/status=eq\.pending/);
     expect(fetchCalls[0]).toMatch(/expires_at=gt\./);

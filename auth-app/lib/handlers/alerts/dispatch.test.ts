@@ -90,7 +90,7 @@ describe("alerts/dispatch handler", () => {
 
   it("403 when audience wrong", async () => {
     const handler = createDispatchHandler({ loadRoutes: vi.fn() });
-    const token = await makeServiceToken("alerts.dispatch", "sage");
+    const token = await makeServiceToken("alerts.dispatch", "bsage");
     const req = makeReq({
       method: "POST",
       body: validEvent,

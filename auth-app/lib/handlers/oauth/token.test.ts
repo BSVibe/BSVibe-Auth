@@ -43,8 +43,8 @@ async function buildClientRecord(
     client_type: "confidential",
     client_secret_hash: await hashClientSecret(validClientSecret),
     tenant_id: tenantId,
-    allowed_audiences: ["supervisor"],
-    allowed_scopes: ["supervisor:write", "supervisor:read"],
+    allowed_audiences: ["bsupervisor"],
+    allowed_scopes: ["bsupervisor:write", "bsupervisor:read"],
     revoked_at: null,
     ...overrides,
   };
@@ -90,7 +90,7 @@ describe("oauth/token handler", () => {
     const req = makeReq({
       method: "POST",
       headers: { authorization: basicHeader(validClientId, validClientSecret) },
-      body: { audience: "supervisor" },
+      body: { audience: "bsupervisor" },
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -103,7 +103,7 @@ describe("oauth/token handler", () => {
     const req = makeReq({
       method: "POST",
       headers: { authorization: basicHeader(validClientId, validClientSecret) },
-      body: { grant_type: "password", audience: "supervisor" },
+      body: { grant_type: "password", audience: "bsupervisor" },
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -128,7 +128,7 @@ describe("oauth/token handler", () => {
     const handler = createOAuthTokenHandler({ lookupClient: vi.fn() });
     const req = makeReq({
       method: "POST",
-      body: { grant_type: "client_credentials", audience: "supervisor" },
+      body: { grant_type: "client_credentials", audience: "bsupervisor" },
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -143,7 +143,7 @@ describe("oauth/token handler", () => {
     const req = makeReq({
       method: "POST",
       headers: { authorization: basicHeader("nope", "x") },
-      body: { grant_type: "client_credentials", audience: "supervisor" },
+      body: { grant_type: "client_credentials", audience: "bsupervisor" },
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -158,7 +158,7 @@ describe("oauth/token handler", () => {
     const req = makeReq({
       method: "POST",
       headers: { authorization: basicHeader(validClientId, "wrong") },
-      body: { grant_type: "client_credentials", audience: "supervisor" },
+      body: { grant_type: "client_credentials", audience: "bsupervisor" },
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -175,7 +175,7 @@ describe("oauth/token handler", () => {
     const req = makeReq({
       method: "POST",
       headers: { authorization: basicHeader(validClientId, validClientSecret) },
-      body: { grant_type: "client_credentials", audience: "supervisor" },
+      body: { grant_type: "client_credentials", audience: "bsupervisor" },
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -201,7 +201,7 @@ describe("oauth/token handler", () => {
       headers: {
         authorization: basicHeader(validClientId, "any-secret-the-cli-might-send"),
       },
-      body: { grant_type: "client_credentials", audience: "supervisor" },
+      body: { grant_type: "client_credentials", audience: "bsupervisor" },
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -211,14 +211,14 @@ describe("oauth/token handler", () => {
 
   it("400 invalid_target when audience is not in allowed_audiences", async () => {
     const record = await buildClientRecord({
-      allowed_audiences: ["supervisor"],
+      allowed_audiences: ["bsupervisor"],
     });
     const lookupClient = vi.fn().mockResolvedValue(record);
     const handler = createOAuthTokenHandler({ lookupClient });
     const req = makeReq({
       method: "POST",
       headers: { authorization: basicHeader(validClientId, validClientSecret) },
-      body: { grant_type: "client_credentials", audience: "sage" },
+      body: { grant_type: "client_credentials", audience: "bsage" },
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -228,7 +228,7 @@ describe("oauth/token handler", () => {
 
   it("400 invalid_scope when requested scope is not allowed", async () => {
     const record = await buildClientRecord({
-      allowed_scopes: ["supervisor:write"],
+      allowed_scopes: ["bsupervisor:write"],
     });
     const lookupClient = vi.fn().mockResolvedValue(record);
     const handler = createOAuthTokenHandler({ lookupClient });
@@ -237,8 +237,8 @@ describe("oauth/token handler", () => {
       headers: { authorization: basicHeader(validClientId, validClientSecret) },
       body: {
         grant_type: "client_credentials",
-        audience: "supervisor",
-        scope: "supervisor:write sage:read",
+        audience: "bsupervisor",
+        scope: "bsupervisor:write bsage:read",
       },
     });
     const { res, captured } = makeRes();
@@ -258,8 +258,8 @@ describe("oauth/token handler", () => {
       headers: { authorization: basicHeader(validClientId, validClientSecret) },
       body: {
         grant_type: "client_credentials",
-        audience: "supervisor",
-        scope: "supervisor:write",
+        audience: "bsupervisor",
+        scope: "bsupervisor:write",
       },
     });
     const { res, captured } = makeRes();
@@ -274,15 +274,15 @@ describe("oauth/token handler", () => {
     };
     expect(body.token_type).toBe("Bearer");
     expect(body.expires_in).toBeGreaterThan(0);
-    expect(body.scope).toBe("supervisor:write");
+    expect(body.scope).toBe("bsupervisor:write");
 
     const payload = decodeJwtPayload<ServiceTokenPayload>(body.access_token);
-    expect(payload.aud).toBe("supervisor");
+    expect(payload.aud).toBe("bsupervisor");
     expect(payload.sub).toBe(`client:${validClientId}`);
     expect(payload.tenant_id).toBe(tenantId);
     expect(payload.token_type).toBe("service");
     expect(payload.scope.split(" ").sort()).toEqual([
-      "supervisor:write",
+      "bsupervisor:write",
     ]);
 
     expect(touchLastUsed).toHaveBeenCalledWith(validClientId);
@@ -290,7 +290,7 @@ describe("oauth/token handler", () => {
 
   it("defaults scope to allowed_scopes when omitted", async () => {
     const record = await buildClientRecord({
-      allowed_scopes: ["supervisor:write", "supervisor:read"],
+      allowed_scopes: ["bsupervisor:write", "bsupervisor:read"],
     });
     const lookupClient = vi.fn().mockResolvedValue(record);
     const handler = createOAuthTokenHandler({ lookupClient });
@@ -298,7 +298,7 @@ describe("oauth/token handler", () => {
     const req = makeReq({
       method: "POST",
       headers: { authorization: basicHeader(validClientId, validClientSecret) },
-      body: { grant_type: "client_credentials", audience: "supervisor" },
+      body: { grant_type: "client_credentials", audience: "bsupervisor" },
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -306,8 +306,8 @@ describe("oauth/token handler", () => {
     expect(captured.statusCode).toBe(200);
     const body = captured.body as { scope: string; access_token: string };
     expect(body.scope.split(" ").sort()).toEqual([
-      "supervisor:read",
-      "supervisor:write",
+      "bsupervisor:read",
+      "bsupervisor:write",
     ]);
   });
 
@@ -320,7 +320,7 @@ describe("oauth/token handler", () => {
       method: "POST",
       body: {
         grant_type: "client_credentials",
-        audience: "supervisor",
+        audience: "bsupervisor",
         client_id: validClientId,
         client_secret: validClientSecret,
       },
@@ -337,8 +337,8 @@ describe("oauth/token handler", () => {
 
     const formBody = new URLSearchParams({
       grant_type: "client_credentials",
-      audience: "supervisor",
-      scope: "supervisor:write",
+      audience: "bsupervisor",
+      scope: "bsupervisor:write",
     }).toString();
 
     const req = makeReq({
@@ -360,7 +360,7 @@ describe("oauth/token handler", () => {
     const req = makeReq({
       method: "POST",
       headers: { authorization: basicHeader(validClientId, validClientSecret) },
-      body: { grant_type: "client_credentials", audience: "supervisor" },
+      body: { grant_type: "client_credentials", audience: "bsupervisor" },
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -389,8 +389,8 @@ describe("oauth/token handler — refresh_token grant", () => {
       user_id: userId,
       tenant_id: tenantId,
       type: "pat",
-      audience: ["gateway"],
-      scopes: ["gateway:models:read"],
+      audience: ["bsgateway"],
+      scopes: ["bsgateway:models:read"],
       revoked_at: null,
       expires_at: new Date(Date.now() + 3600_000).toISOString(),
       ...overrides,
@@ -455,15 +455,15 @@ describe("oauth/token handler — refresh_token grant", () => {
     };
     expect(body.token_type).toBe("Bearer");
     expect(body.expires_in).toBeGreaterThan(0);
-    expect(body.scope).toBe("gateway:models:read");
+    expect(body.scope).toBe("bsgateway:models:read");
     expect(typeof body.refresh_token).toBe("string");
     expect(body.refresh_token).not.toBe(refreshRaw);
 
     const payload = decodePatJwtPayload<PatJwtPayload>(body.access_token);
     expect(payload.sub).toBe(userId);
     expect(payload.tenant).toBe(tenantId);
-    expect(payload.aud).toEqual(["gateway"]);
-    expect(payload.scope).toEqual(["gateway:models:read"]);
+    expect(payload.aud).toEqual(["bsgateway"]);
+    expect(payload.scope).toEqual(["bsgateway:models:read"]);
     expect(payload.token_type).toBe("pat");
 
     const sigOk = await verifyPatJwtSignature(
@@ -574,8 +574,8 @@ describe("oauth/token handler — device_code grant", () => {
       client_type: "public",
       client_secret_hash: null,
       tenant_id: null,
-      allowed_audiences: ["gateway"],
-      allowed_scopes: ["gateway:models:read"],
+      allowed_audiences: ["bsgateway"],
+      allowed_scopes: ["bsgateway:models:read"],
       revoked_at: null,
     };
   }
@@ -607,8 +607,8 @@ describe("oauth/token handler — device_code grant", () => {
         kind: "claimed",
         userId,
         tenantId,
-        scope: ["gateway:models:read"],
-        audience: ["gateway"],
+        scope: ["bsgateway:models:read"],
+        audience: ["bsgateway"],
         clientId: "device-flow-cli",
       });
     const insertPatTokenRow = vi
@@ -657,7 +657,7 @@ describe("oauth/token handler — device_code grant", () => {
       scope: string;
     };
     expect(body.token_type).toBe("Bearer");
-    expect(body.scope).toBe("gateway:models:read");
+    expect(body.scope).toBe("bsgateway:models:read");
     // Round 4 Finding 14: device-flow PAT envelope is the long TTL (30d).
     // MCP clients (Claude Code, IDE plugins) consume the env-var PAT
     // directly with no refresh-grant path, so the access token must
@@ -667,7 +667,7 @@ describe("oauth/token handler — device_code grant", () => {
     const payload = decodePatJwtPayload<PatJwtPayload>(body.access_token);
     expect(payload.sub).toBe(userId);
     expect(payload.tenant).toBe(tenantId);
-    expect(payload.aud).toEqual(["gateway"]);
+    expect(payload.aud).toEqual(["bsgateway"]);
     expect(payload.token_type).toBe("pat");
     // The PAT JWT's own exp claim must mirror the same 30d envelope —
     // not the 1h refresh-grant default. Allow 5s leeway for test clock.
@@ -834,8 +834,8 @@ describe("oauth/token handler — authorization_code grant", () => {
       client_type: "public",
       client_secret_hash: null,
       tenant_id: null,
-      allowed_audiences: ["gateway", "sage"],
-      allowed_scopes: ["gateway:*", "sage:*"],
+      allowed_audiences: ["bsgateway", "bsage"],
+      allowed_scopes: ["bsgateway:*", "bsage:*"],
       redirect_uris: [redirectUri],
       revoked_at: null,
     };
@@ -923,8 +923,8 @@ describe("oauth/token handler — authorization_code grant", () => {
         clientId: "claude-code-mcp",
         userId,
         tenantId: userTenantId,
-        scope: ["gateway:*"],
-        audience: ["gateway"],
+        scope: ["bsgateway:*"],
+        audience: ["bsgateway"],
         redirectUri,
       });
     const insertPatTokenRow = vi
@@ -975,12 +975,12 @@ describe("oauth/token handler — authorization_code grant", () => {
       scope: string;
     };
     expect(body.token_type).toBe("Bearer");
-    expect(body.scope).toBe("gateway:*");
+    expect(body.scope).toBe("bsgateway:*");
     expect(body.expires_in).toBe(30 * 24 * 60 * 60);
     const payload = decodePatJwtPayload<PatJwtPayload>(body.access_token);
     expect(payload.sub).toBe(userId);
     expect(payload.tenant).toBe(userTenantId);
-    expect(payload.aud).toEqual(["gateway"]);
+    expect(payload.aud).toEqual(["bsgateway"]);
     expect(payload.token_type).toBe("pat");
     expect(
       audits.find(

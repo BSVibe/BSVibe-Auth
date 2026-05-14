@@ -111,8 +111,8 @@ describe("fetchOAuthClient", () => {
       client_type: "confidential",
       client_secret_hash: "pbkdf2-sha256$100$AAA$BBB",
       tenant_id: "11111111-1111-4111-8111-111111111111",
-      allowed_audiences: ["supervisor"],
-      allowed_scopes: ["supervisor:audit.write"],
+      allowed_audiences: ["bsupervisor"],
+      allowed_scopes: ["bsupervisor:audit.write"],
       revoked_at: null,
     };
     const fetchImpl = vi.fn().mockResolvedValue(

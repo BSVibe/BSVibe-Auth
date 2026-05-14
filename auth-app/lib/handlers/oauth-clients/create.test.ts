@@ -49,8 +49,8 @@ describe("oauth-clients/create handler", () => {
       verifyAccessToken: vi.fn().mockResolvedValue(userId),
     });
     const req = authedReq({
-      allowed_audiences: ["gateway"],
-      allowed_scopes: ["gateway:read"],
+      allowed_audiences: ["bsgateway"],
+      allowed_scopes: ["bsgateway:read"],
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -65,7 +65,7 @@ describe("oauth-clients/create handler", () => {
     const req = authedReq({
       name: "ci",
       allowed_audiences: ["nonsense"],
-      allowed_scopes: ["gateway:read"],
+      allowed_scopes: ["bsgateway:read"],
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -78,7 +78,7 @@ describe("oauth-clients/create handler", () => {
     });
     const req = authedReq({
       name: "ci",
-      allowed_audiences: ["gateway"],
+      allowed_audiences: ["bsgateway"],
       allowed_scopes: ["NO_COLON"],
     });
     const { res, captured } = makeRes();
@@ -93,8 +93,8 @@ describe("oauth-clients/create handler", () => {
     });
     const req = authedReq({
       name: "ci",
-      allowed_audiences: ["gateway"],
-      allowed_scopes: ["gateway:read"],
+      allowed_audiences: ["bsgateway"],
+      allowed_scopes: ["bsgateway:read"],
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -109,8 +109,8 @@ describe("oauth-clients/create handler", () => {
           client_id: "svc-deadbeefdeadbeef",
           description: "ci",
           tenant_id: tenantId,
-          allowed_audiences: ["gateway"],
-          allowed_scopes: ["gateway:read"],
+          allowed_audiences: ["bsgateway"],
+          allowed_scopes: ["bsgateway:read"],
           created_at: "2026-05-12T00:00:00Z",
         },
       ],
@@ -129,8 +129,8 @@ describe("oauth-clients/create handler", () => {
     });
     const req = authedReq({
       name: "ci",
-      allowed_audiences: ["gateway"],
-      allowed_scopes: ["gateway:read"],
+      allowed_audiences: ["bsgateway"],
+      allowed_scopes: ["bsgateway:read"],
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -147,8 +147,8 @@ describe("oauth-clients/create handler", () => {
       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij0123456789",
     );
     expect(body.tenant_id).toBe(tenantId);
-    expect(body.allowed_audiences).toEqual(["gateway"]);
-    expect(body.allowed_scopes).toEqual(["gateway:read"]);
+    expect(body.allowed_audiences).toEqual(["bsgateway"]);
+    expect(body.allowed_scopes).toEqual(["bsgateway:read"]);
     // Audit fired.
     expect(audits.length).toBe(1);
     // Insert call inspected — must NOT carry plaintext, must carry PBKDF2 hash.

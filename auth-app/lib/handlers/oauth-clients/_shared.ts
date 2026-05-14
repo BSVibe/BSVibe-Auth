@@ -10,10 +10,10 @@
 import type { VercelRequest } from "../_lib/types";
 
 const AUDIENCES = new Set([
-  "gateway",
-  "sage",
-  "nexus",
-  "supervisor",
+  "bsgateway",
+  "bsage",
+  "bsnexus",
+  "bsupervisor",
   "bsvibe-auth",
 ]);
 

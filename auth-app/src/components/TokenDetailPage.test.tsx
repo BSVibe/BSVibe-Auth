@@ -62,8 +62,8 @@ describe('TokenDetailPage', () => {
           type: 'api_key',
           prefix: 'bsv_sk_xxxx',
           name: 'CLI key',
-          audience: ['gateway'],
-          scopes: ['gateway:models:read'],
+          audience: ['bsgateway'],
+          scopes: ['bsgateway:models:read'],
           created_at: '2026-05-07T00:00:00Z',
           expires_at: '2026-08-05T00:00:00Z',
           last_used_at: '2026-05-07T01:23:00Z',
@@ -84,7 +84,7 @@ describe('TokenDetailPage', () => {
 
     expect(await screen.findByText('CLI key')).toBeInTheDocument();
     expect(screen.getByText(/bsv_sk_xxxx/)).toBeInTheDocument();
-    expect(screen.getByText(/gateway:models:read/)).toBeInTheDocument();
+    expect(screen.getByText(/bsgateway:models:read/)).toBeInTheDocument();
 
     // confirm() is clicked through; stub it to return true
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);

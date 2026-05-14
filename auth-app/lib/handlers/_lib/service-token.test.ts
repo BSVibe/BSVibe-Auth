@@ -35,29 +35,29 @@ describe("validateAudience", () => {
 
 describe("validateScopes", () => {
   it("accepts well-formed scopes matching audience", () => {
-    expect(validateScopes("sage", ["sage:read", "sage:write"])).toEqual([
-      "sage:read",
-      "sage:write",
+    expect(validateScopes("bsage", ["bsage:read", "bsage:write"])).toEqual([
+      "bsage:read",
+      "bsage:write",
     ]);
   });
   it("sorts and dedupes scopes", () => {
-    expect(validateScopes("sage", ["sage:write", "sage:read", "sage:read"])).toEqual([
-      "sage:read",
-      "sage:write",
+    expect(validateScopes("bsage", ["bsage:write", "bsage:read", "bsage:read"])).toEqual([
+      "bsage:read",
+      "bsage:write",
     ]);
   });
   it("rejects empty scope list", () => {
-    expect(() => validateScopes("sage", [])).toThrow(/invalid_scope/);
+    expect(() => validateScopes("bsage", [])).toThrow(/invalid_scope/);
   });
   it("rejects malformed scope identifier", () => {
-    expect(() => validateScopes("sage", ["BSAGE.read"])).toThrow(/invalid_scope/);
-    expect(() => validateScopes("sage", ["bsage_read"])).toThrow(/invalid_scope/);
-    expect(() => validateScopes("sage", ["sage."])).toThrow(/invalid_scope/);
+    expect(() => validateScopes("bsage", ["BSAGE.read"])).toThrow(/invalid_scope/);
+    expect(() => validateScopes("bsage", ["bsage_read"])).toThrow(/invalid_scope/);
+    expect(() => validateScopes("bsage", ["bsage."])).toThrow(/invalid_scope/);
   });
   it("rejects scope whose namespace does not match audience (decision #16)", () => {
     let err: ServiceTokenError | null = null;
     try {
-      validateScopes("sage", ["sage:read", "gateway:write"]);
+      validateScopes("bsage", ["bsage:read", "bsgateway:write"]);
     } catch (e) {
       err = e as ServiceTokenError;
     }
@@ -65,7 +65,7 @@ describe("validateScopes", () => {
     expect(err?.code).toBe("scope_audience_mismatch");
   });
   it("rejects non-array", () => {
-    expect(() => validateScopes("sage", "sage:read")).toThrow(/invalid_scope/);
+    expect(() => validateScopes("bsage", "bsage:read")).toThrow(/invalid_scope/);
   });
 });
 
@@ -91,8 +91,8 @@ describe("issueServiceToken", () => {
   it("produces a JWT with audience, scope, iat/exp, token_type=service", async () => {
     const result = await issueServiceToken(
       {
-        audience: "sage",
-        scope: ["sage:read", "sage:write"],
+        audience: "bsage",
+        scope: ["bsage:read", "bsage:write"],
         subject: "service:bsnexus",
         ttlSeconds: 7200,
       },
@@ -104,8 +104,8 @@ describe("issueServiceToken", () => {
 
     const payload = decodeJwtPayload<ServiceTokenPayload>(result.access_token);
     expect(payload.iss).toBe("https://auth.bsvibe.dev");
-    expect(payload.aud).toBe("sage");
-    expect(payload.scope).toBe("sage:read sage:write");
+    expect(payload.aud).toBe("bsage");
+    expect(payload.scope).toBe("bsage:read bsage:write");
     expect(payload.sub).toBe("service:bsnexus");
     expect(payload.token_type).toBe("service");
     expect(payload.iat).toBe(Math.floor(cfg.now() / 1000));
@@ -116,8 +116,8 @@ describe("issueServiceToken", () => {
   it("defaults TTL to 3600 when ttlSeconds is omitted", async () => {
     const result = await issueServiceToken(
       {
-        audience: "supervisor",
-        scope: ["supervisor:read"],
+        audience: "bsupervisor",
+        scope: ["bsupervisor:read"],
         subject: "user:abc",
       },
       cfg,
@@ -130,8 +130,8 @@ describe("issueServiceToken", () => {
   it("includes tenant_id claim when provided", async () => {
     const result = await issueServiceToken(
       {
-        audience: "nexus",
-        scope: ["nexus:read"],
+        audience: "bsnexus",
+        scope: ["bsnexus:read"],
         subject: "user:abc",
         tenantId: "tenant-xyz",
       },
@@ -144,8 +144,8 @@ describe("issueServiceToken", () => {
   it("produces a verifiable HS256 signature", async () => {
     const result = await issueServiceToken(
       {
-        audience: "gateway",
-        scope: ["gateway:read"],
+        audience: "bsgateway",
+        scope: ["bsgateway:read"],
         subject: "service:bsnexus",
       },
       cfg,
@@ -162,8 +162,8 @@ describe("issueServiceToken", () => {
     await expect(
       issueServiceToken(
         {
-          audience: "sage",
-          scope: ["sage:read"],
+          audience: "bsage",
+          scope: ["bsage:read"],
           subject: "",
         },
         cfg,
@@ -175,8 +175,8 @@ describe("issueServiceToken", () => {
     await expect(
       issueServiceToken(
         {
-          audience: "sage",
-          scope: ["sage:read"],
+          audience: "bsage",
+          scope: ["bsage:read"],
           subject: "service:bsnexus",
         },
         { ...cfg, signingSecret: "" },
@@ -188,8 +188,8 @@ describe("issueServiceToken", () => {
     await expect(
       issueServiceToken(
         {
-          audience: "sage",
-          scope: ["sage:read", "gateway:write"],
+          audience: "bsage",
+          scope: ["bsage:read", "bsgateway:write"],
           subject: "service:x",
         },
         cfg,

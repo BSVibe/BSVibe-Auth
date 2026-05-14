@@ -18,80 +18,80 @@ export interface AudienceOption {
 
 export const SCOPE_CATALOG: readonly ScopeOption[] = [
   {
-    value: "gateway:models:read",
-    label: "gateway:models:read",
+    value: "bsgateway:models:read",
+    label: "bsgateway:models:read",
     description: "List and inspect routed model deployments.",
   },
   {
-    value: "gateway:models:write",
-    label: "gateway:models:write",
+    value: "bsgateway:models:write",
+    label: "bsgateway:models:write",
     description: "Create, update, or remove model deployments.",
   },
   {
-    value: "gateway:routing:read",
-    label: "gateway:routing:read",
+    value: "bsgateway:routing:read",
+    label: "bsgateway:routing:read",
     description: "Read routing rules and traffic policies.",
   },
   {
-    value: "gateway:routing:write",
-    label: "gateway:routing:write",
+    value: "bsgateway:routing:write",
+    label: "bsgateway:routing:write",
     description: "Modify routing rules and traffic policies.",
   },
   {
-    value: "gateway:tenants:read",
-    label: "gateway:tenants:read",
+    value: "bsgateway:tenants:read",
+    label: "bsgateway:tenants:read",
     description: "Read tenant configuration.",
   },
   {
-    value: "gateway:tenants:write",
-    label: "gateway:tenants:write",
+    value: "bsgateway:tenants:write",
+    label: "bsgateway:tenants:write",
     description: "Modify tenant configuration.",
   },
   {
-    value: "gateway:audit:read",
-    label: "gateway:audit:read",
+    value: "bsgateway:audit:read",
+    label: "bsgateway:audit:read",
     description: "Read audit events.",
   },
   {
-    value: "gateway:*",
-    label: "gateway:*",
+    value: "bsgateway:*",
+    label: "bsgateway:*",
     description: "Full access to the BSGateway control plane.",
   },
   {
-    value: "sage:notes:read",
-    label: "sage:notes:read",
+    value: "bsage:notes:read",
+    label: "bsage:notes:read",
     description: "Read BSage notes and graph data.",
   },
   {
-    value: "sage:notes:write",
-    label: "sage:notes:write",
+    value: "bsage:notes:write",
+    label: "bsage:notes:write",
     description: "Create or modify BSage notes.",
   },
   {
-    value: "sage:*",
-    label: "sage:*",
+    value: "bsage:*",
+    label: "bsage:*",
     description: "Full access to BSage.",
   },
 ] as const;
 
 export const AUDIENCE_CATALOG: readonly AudienceOption[] = [
   {
-    value: "gateway",
+    value: "bsgateway",
     label: "BSGateway",
-    description: "AI gateway / control plane.",
+    description: "AI bsgateway / control plane.",
   },
   {
-    value: "sage",
+    value: "bsage",
     label: "BSage",
     description: "Knowledge graph + notes service.",
   },
   {
-    value: "nexus",
+    value: "bsnexus",
     label: "BSVibe Nexus",
     description: "Workspace shell.",
   },
   {
-    value: "supervisor",
+    value: "bsupervisor",
     label: "BSVibe Supervisor",
     description: "Cross-product orchestration agent.",
   },

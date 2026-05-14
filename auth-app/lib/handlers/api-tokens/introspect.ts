@@ -1,7 +1,7 @@
 /**
  * POST /api/tokens/introspect — RFC 7662 OAuth 2.0 Token Introspection.
  *
- * Resource servers (gateway, sage, nexus, supervisor) call this with a token
+ * Resource servers (bsgateway, bsage, bsnexus, bsupervisor) call this with a token
  * they received from a user request to confirm it is still active and learn
  * its scope/aud/sub. Caller authenticates via HTTP Basic using an
  * `oauth_clients` row (same identities used by /api/oauth/token).

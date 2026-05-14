@@ -3,7 +3,7 @@
  *
  * Phase 0 P0.7 (partial — endpoint only):
  *   - audience-scoped (`aud: bsage|bsgateway|bsupervisor|bsnexus`)
- *   - explicit `scope` claim (space-delimited list, e.g. "sage:read sage:write")
+ *   - explicit `scope` claim (space-delimited list, e.g. "bsage:read bsage:write")
  *   - signed with shared HS256 secret in Phase 0 — Phase 0.4 will introduce
  *     Ed25519 + JWKS rotation. The JWT *shape* is what 4 products will rely on
  *     for the bsvibe-authz verification path; the algorithm is internal.
@@ -14,18 +14,18 @@
 
 import { base64UrlEncode, base64UrlEncodeJSON, hmacSha256 } from "./jwt-crypto";
 
-// Round 5 final: the 4 MCP-aligned audiences. The legacy ``bs*`` REST
-// audiences were removed via the cutover sequence (Steps 1–6). All
-// service-account-issued tokens for /mcp use these bare names.
+// Post-Round-5 reversion: service-token audiences are again ``bs``-prefixed
+// product names so audience and product identity match everywhere. The
+// bare-name MCP grammar from Round 5 was an intermediate step.
 //
 // ``bsvibe-auth`` remains as a special internal audience for the audit-
 // relay scope (``audit.write``) that products use to call BSVibe-Auth's
 // /api/audit/events directly.
 export const SERVICE_AUDIENCES = [
-  "gateway",
-  "sage",
-  "supervisor",
-  "nexus",
+  "bsgateway",
+  "bsage",
+  "bsupervisor",
+  "bsnexus",
   "bsvibe-auth",
 ] as const;
 
@@ -42,7 +42,7 @@ const MAX_TTL_S = 24 * 3600; // 24 hours — service tokens should refresh.
 
 export interface IssueServiceTokenInput {
   audience: ServiceAudience;
-  /** Scope identifiers, e.g. ["sage:read", "sage:write"]. Must all be prefixed with audience. */
+  /** Scope identifiers, e.g. ["bsage:read", "bsage:write"]. Must all be prefixed with audience. */
   scope: string[];
   /** Optional override TTL in seconds. Default 3600, max 86400. */
   ttlSeconds?: number;

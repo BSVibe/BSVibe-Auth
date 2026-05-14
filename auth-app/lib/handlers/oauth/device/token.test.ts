@@ -53,8 +53,8 @@ describe("oauth/device/token claimDeviceCode", () => {
               client_id: CLIENT_ID,
               user_id: USER_ID,
               tenant_id: TENANT_ID,
-              scope: ["gateway:models:read"],
-              audience: ["gateway"],
+              scope: ["bsgateway:models:read"],
+              audience: ["bsgateway"],
               status: "consumed",
             },
           ]),
@@ -69,8 +69,8 @@ describe("oauth/device/token claimDeviceCode", () => {
     if (result.kind === "claimed") {
       expect(result.userId).toBe(USER_ID);
       expect(result.tenantId).toBe(TENANT_ID);
-      expect(result.scope).toEqual(["gateway:models:read"]);
-      expect(result.audience).toEqual(["gateway"]);
+      expect(result.scope).toEqual(["bsgateway:models:read"]);
+      expect(result.audience).toEqual(["bsgateway"]);
     }
     expect(calls).toHaveLength(1);
     expect(calls[0].method).toBe("PATCH");

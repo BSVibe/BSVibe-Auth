@@ -12,7 +12,7 @@ const baseEnv = {
 
 const TENANT_ID = "00000000-0000-0000-0000-0000000000aa";
 
-async function makeServiceToken(scope = "alerts.dispatch", audience = "bsvibe-auth") {
+async function makeServiceToken(scope = "bsvibe-auth:alerts.dispatch", audience = "bsvibe-auth") {
   return signTestToken(SIGNING_SECRET, {
     iss: "https://auth.bsvibe.dev",
     sub: "service:bsage",
@@ -77,7 +77,7 @@ describe("alerts/dispatch handler", () => {
 
   it("403 when scope missing", async () => {
     const handler = createDispatchHandler({ loadRoutes: vi.fn() });
-    const token = await makeServiceToken("audit.write");
+    const token = await makeServiceToken("bsvibe-auth:audit.write");
     const req = makeReq({
       method: "POST",
       body: validEvent,
@@ -90,7 +90,7 @@ describe("alerts/dispatch handler", () => {
 
   it("403 when audience wrong", async () => {
     const handler = createDispatchHandler({ loadRoutes: vi.fn() });
-    const token = await makeServiceToken("alerts.dispatch", "bsage");
+    const token = await makeServiceToken("bsvibe-auth:alerts.dispatch", "bsage");
     const req = makeReq({
       method: "POST",
       body: validEvent,

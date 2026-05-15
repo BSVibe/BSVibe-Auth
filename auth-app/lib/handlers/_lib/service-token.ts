@@ -34,7 +34,12 @@ export type ServiceAudience = (typeof SERVICE_AUDIENCES)[number];
 // MCP scope grammar — ``<audience>:<resource>`` (``*`` or identifier with
 // optional ``.``/``_``/``-`` separators in the resource part).
 const SCOPE_PATTERN = /^[a-z][a-z0-9-]*:(?:\*|[a-z][a-z0-9-]*(?:[._-][a-z0-9]+)*)$/;
-const BSVIBE_AUTH_INTERNAL_SCOPES = new Set(["audit.write"]);
+// Tier 3.3 (2026-05-15): the BSVIBE_AUTH_INTERNAL_SCOPES carve-out
+// (formerly Set(["audit.write"])) was retired. The legacy bare-named
+// `audit.write` and `alerts.dispatch` scopes now follow MCP grammar
+// as `bsvibe-auth:audit.write` and `bsvibe-auth:alerts.dispatch`, so
+// every scope in the system passes SCOPE_PATTERN + audience-prefix
+// validation uniformly. No more special-case allow-list.
 
 const DEFAULT_TTL_S = 3600; // 1 hour
 const MIN_TTL_S = 60;
@@ -122,24 +127,17 @@ export function validateScopes(
         `invalid scope format: ${String(s)}`,
       );
     }
-    // bsvibe-auth's internal scopes are an audience-side allow-list
-    // (audit.write etc.) that pre-dates the MCP colon grammar. Accept
-    // them verbatim for that one audience.
-    const isBsvibeAuthInternal =
-      audience === "bsvibe-auth" && BSVIBE_AUTH_INTERNAL_SCOPES.has(s);
-    if (!isBsvibeAuthInternal) {
-      if (!SCOPE_PATTERN.test(s)) {
-        throw new ServiceTokenError(
-          "invalid_scope",
-          `invalid scope format: ${s}`,
-        );
-      }
-      if (!s.startsWith(`${audience}:`)) {
-        throw new ServiceTokenError(
-          "scope_audience_mismatch",
-          `scope ${s} does not match audience ${audience}`,
-        );
-      }
+    if (!SCOPE_PATTERN.test(s)) {
+      throw new ServiceTokenError(
+        "invalid_scope",
+        `invalid scope format: ${s}`,
+      );
+    }
+    if (!s.startsWith(`${audience}:`)) {
+      throw new ServiceTokenError(
+        "scope_audience_mismatch",
+        `scope ${s} does not match audience ${audience}`,
+      );
     }
     seen.add(s);
   }

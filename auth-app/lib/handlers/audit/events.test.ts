@@ -11,7 +11,7 @@ const baseEnv = {
   SERVICE_TOKEN_SIGNING_SECRET: SIGNING_SECRET,
 };
 
-async function makeServiceToken(scope = "audit.write", audience = "bsvibe-auth") {
+async function makeServiceToken(scope = "bsvibe-auth:audit.write", audience = "bsvibe-auth") {
   return signTestToken(SIGNING_SECRET, {
     iss: "https://auth.bsvibe.dev",
     sub: "service:bsage",
@@ -78,7 +78,7 @@ describe("audit/events handler", () => {
     expect(captured.statusCode).toBe(401);
   });
 
-  it("returns 403 when token lacks audit.write scope", async () => {
+  it("returns 403 when token lacks bsvibe-auth:audit.write scope", async () => {
     const token = await makeServiceToken("something.else");
     const handler = createAuditEventsHandler({ fetchImpl: makeFetchOk() });
     const req = makeReq({

@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "./_lib/types";
 import {
+  ensurePersonalTenant as ensurePersonalTenantImpl,
   listTenantsForUser as listTenantsForUserImpl,
   pickActiveTenant,
   type SupabaseConfig,
@@ -27,6 +28,12 @@ export interface SessionHandlerDeps {
     userId: string,
     fetchImpl?: typeof fetch,
   ) => Promise<Tenant[]>;
+  ensurePersonalTenant?: (
+    cfg: SupabaseConfig,
+    userId: string,
+    displayName: string | null,
+    fetchImpl?: typeof fetch,
+  ) => Promise<string>;
   fetchImpl?: typeof fetch;
   emitAudit?: EmitAuditFn;
 }
@@ -231,6 +238,8 @@ async function buildSessionFromRefreshToken(
 
 export function createSessionHandler(deps: SessionHandlerDeps = {}) {
   const listTenants = deps.listTenantsForUser ?? listTenantsForUserImpl;
+  const ensureTenant =
+    deps.ensurePersonalTenant ?? ensurePersonalTenantImpl;
   const fetchImpl = deps.fetchImpl ?? fetch;
   const emitAudit: EmitAuditFn =
     deps.emitAudit ??
@@ -330,6 +339,28 @@ export function createSessionHandler(deps: SessionHandlerDeps = {}) {
         userIdFromBody.length > 0 &&
         serviceRoleKey
       ) {
+        // Provision a personal tenant + owner membership on first login. The
+        // RPC is idempotent — later logins return the existing tenant_id.
+        // Failure logs but must not block session cookie set, identical
+        // discipline to the audit emit below.
+        const displayName =
+          typeof postBody.email === "string" && postBody.email.length > 0
+            ? postBody.email.split("@")[0] || null
+            : null;
+        try {
+          await ensureTenant(
+            { url: supabaseUrl, serviceRoleKey },
+            userIdFromBody,
+            displayName,
+            fetchImpl,
+          );
+        } catch (err) {
+          console.error("ensure_personal_tenant_failed", {
+            userId: userIdFromBody,
+            err,
+          });
+        }
+
         const eventType =
           postBody.event === "signup_success"
             ? "auth.user.created"

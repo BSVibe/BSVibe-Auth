@@ -364,4 +364,144 @@ describe("session handler", () => {
     await handler(req, res);
     expect(captured.statusCode).toBe(500);
   });
+
+  describe("POST tenant provisioning hook", () => {
+    const supabaseTokenResponse = {
+      access_token:
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9." +
+        "eyJzdWIiOiJ1c2VyLXBvc3QiLCJlbWFpbCI6InBvc3RAZXhhbXBsZS5kZXYiLCJleHAiOjk5OTk5OTk5OTl9." +
+        "sig",
+      refresh_token: "rt-new",
+      expires_in: 3600,
+    };
+
+    function setup(opts: {
+      event: "signup_success" | "login_success";
+      ensureTenant?: ReturnType<typeof vi.fn>;
+      emit?: ReturnType<typeof vi.fn>;
+    }) {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => supabaseTokenResponse,
+      });
+      const ensureTenant =
+        opts.ensureTenant ?? vi.fn().mockResolvedValue("tenant-new");
+      const emit = opts.emit ?? vi.fn().mockResolvedValue({ ok: true });
+      const handler = createSessionHandler({
+        listTenantsForUser: vi.fn().mockResolvedValue(mockTenants),
+        ensurePersonalTenant: ensureTenant as unknown as (
+          ...args: unknown[]
+        ) => Promise<string>,
+        fetchImpl: fetchMock as unknown as typeof fetch,
+        emitAudit: emit as unknown as Parameters<
+          typeof createSessionHandler
+        >[0]["emitAudit"],
+      });
+      return { handler, ensureTenant, emit };
+    }
+
+    it("calls ensurePersonalTenant on signup_success with email-prefix display name", async () => {
+      const { handler, ensureTenant, emit } = setup({ event: "signup_success" });
+      const req = makeReq({
+        method: "POST",
+        body: {
+          refresh_token: "rt",
+          event: "signup_success",
+          user_id: "user-new",
+          email: "alice@example.dev",
+        },
+      });
+      const { res, captured } = makeRes();
+      await handler(req, res);
+      expect(captured.statusCode).toBe(200);
+      expect(ensureTenant).toHaveBeenCalledTimes(1);
+      expect(ensureTenant).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: baseEnv.SUPABASE_URL,
+          serviceRoleKey: baseEnv.SUPABASE_SERVICE_ROLE_KEY,
+        }),
+        "user-new",
+        "alice",
+        expect.anything(),
+      );
+      expect(emit).toHaveBeenCalledTimes(1);
+    });
+
+    it("calls ensurePersonalTenant on login_success (idempotent path)", async () => {
+      const { handler, ensureTenant } = setup({ event: "login_success" });
+      const req = makeReq({
+        method: "POST",
+        body: {
+          refresh_token: "rt",
+          event: "login_success",
+          user_id: "user-existing",
+          email: "bob@example.dev",
+        },
+      });
+      const { res, captured } = makeRes();
+      await handler(req, res);
+      expect(captured.statusCode).toBe(200);
+      expect(ensureTenant).toHaveBeenCalledWith(
+        expect.anything(),
+        "user-existing",
+        "bob",
+        expect.anything(),
+      );
+    });
+
+    it("does not block 200 + cookie when ensurePersonalTenant rejects", async () => {
+      const ensureTenant = vi.fn().mockRejectedValue(new Error("rpc 500"));
+      const { handler, emit } = setup({
+        event: "login_success",
+        ensureTenant,
+      });
+      const req = makeReq({
+        method: "POST",
+        body: {
+          refresh_token: "rt",
+          event: "login_success",
+          user_id: "user-x",
+          email: "x@y.z",
+        },
+      });
+      const { res, captured } = makeRes();
+      await handler(req, res);
+      expect(captured.statusCode).toBe(200);
+      expect(getSetCookieHeader(captured)).toMatch(/bsvibe_session=rt-new/);
+      // audit emit still runs after the swallowed RPC failure.
+      expect(emit).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not call ensurePersonalTenant when no event flag is set", async () => {
+      const { handler, ensureTenant } = setup({ event: "login_success" });
+      const req = makeReq({
+        method: "POST",
+        body: { refresh_token: "rt", user_id: "u" },
+      });
+      const { res, captured } = makeRes();
+      await handler(req, res);
+      expect(captured.statusCode).toBe(200);
+      expect(ensureTenant).not.toHaveBeenCalled();
+    });
+
+    it("passes null display name when email is missing", async () => {
+      const { handler, ensureTenant } = setup({ event: "login_success" });
+      const req = makeReq({
+        method: "POST",
+        body: {
+          refresh_token: "rt",
+          event: "login_success",
+          user_id: "user-no-email",
+        },
+      });
+      const { res } = makeRes();
+      await handler(req, res);
+      expect(ensureTenant).toHaveBeenCalledWith(
+        expect.anything(),
+        "user-no-email",
+        null,
+        expect.anything(),
+      );
+    });
+  });
 });

@@ -19,6 +19,7 @@ import {
   fetchOAuthClient,
   type OAuthClientRecord,
 } from "../_lib/oauth-client";
+import { ensurePersonalTenant } from "../_lib/tenants";
 import { verifySupabaseAccessToken } from "../api-tokens/_auth";
 import {
   createAuthorizeHandler,
@@ -148,7 +149,28 @@ export function createAuthorizeRouteHandler(): (
         }
       }
       if (!userId) return null;
-      const tenantId = await resolvePrimaryTenantId(userId, opts);
+      let tenantId = await resolvePrimaryTenantId(userId, opts);
+      if (tenantId === null) {
+        // Defensive auto-provisioning. Phase 1 ships runtime provisioning
+        // inside POST /api/session, so any user who logs in fresh gets a
+        // tenant. This branch covers users whose session pre-dates the
+        // runtime hook (founder + existing prod accounts) and avoids
+        // forcing a re-login.
+        try {
+          await ensurePersonalTenant(
+            { url: supabaseUrl, serviceRoleKey },
+            userId,
+            null,
+            opts.fetchImpl,
+          );
+          tenantId = await resolvePrimaryTenantId(userId, opts);
+        } catch (err) {
+          console.error("authorize_ensure_personal_tenant_failed", {
+            userId,
+            err,
+          });
+        }
+      }
       return { userId, tenantId };
     },
     lookupClient: async (clientId: string): Promise<OAuthClientRow | null> => {

@@ -1,34 +1,22 @@
 /**
- * Token primitives for personal access tokens (PATs) and opaque API keys.
+ * Token primitives for personal access tokens (PATs) and refresh tokens.
  *
- * - Opaque tokens: base62 random body with a `bsv_sk_` / `bsv_pk_` prefix.
- *   Stored as sha256(raw); only the first 12 chars (prefix) are stored
- *   in plaintext for index lookup.
  * - PAT JWTs: HS256 signed with the same secret as service tokens. Distinct
  *   `token_type: "pat"` claim distinguishes them from service-to-service JWTs.
  * - Refresh tokens: 32-byte urlsafe base64 random; stored as sha256(raw).
+ *
+ * (The legacy ``bsv_sk_*`` / ``bsv_pk_*`` opaque API-key primitives were
+ * retired in Tier 2 of the 2026-05 auth cleanup — the issuance entry point
+ * died in Tier 1, the prefix dispatch died in bsvibe-authz 1.3.0, and the
+ * ``tokens.prefix`` / ``tokens.token_hash`` columns are dropped by the
+ * migration shipped with this PR.)
  *
  * Web Crypto only — no jose / jsonwebtoken dependency.
  */
 
 import { base64UrlEncode, base64UrlEncodeJSON, hmacSha256 } from "./jwt-crypto";
 
-const BASE62_ALPHABET =
-  "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-
-const OPAQUE_RANDOM_BYTES = 32;
-
-/** Length of the prefix slice stored in the `tokens.prefix` index column. */
-export const OPAQUE_PREFIX_LEN = 12;
 const REFRESH_RANDOM_BYTES = 32;
-
-export type OpaquePrefix = "bsv_sk_" | "bsv_pk_";
-
-export interface OpaqueToken {
-  raw: string;
-  prefix: string;
-  hash: Uint8Array;
-}
 
 export interface RefreshToken {
   raw: string;
@@ -86,48 +74,6 @@ const textEncoder = new TextEncoder();
 export async function sha256Bytes(input: string): Promise<Uint8Array> {
   const digest = await crypto.subtle.digest("SHA-256", textEncoder.encode(input));
   return new Uint8Array(digest);
-}
-
-function base62Encode(bytes: Uint8Array): string {
-  // Treat the byte array as a big-endian integer; encode to base62.
-  // For 32 random bytes the encoded length is ~43 chars.
-  const digits: number[] = [0];
-  for (const byte of bytes) {
-    let carry = byte;
-    for (let j = 0; j < digits.length; j++) {
-      const v = digits[j] * 256 + carry;
-      digits[j] = v % 62;
-      carry = Math.floor(v / 62);
-    }
-    while (carry > 0) {
-      digits.push(carry % 62);
-      carry = Math.floor(carry / 62);
-    }
-  }
-  // Preserve leading zero bytes as leading "0" base62 digits to keep length stable.
-  for (const byte of bytes) {
-    if (byte === 0) digits.push(0);
-    else break;
-  }
-  let out = "";
-  for (let i = digits.length - 1; i >= 0; i--) out += BASE62_ALPHABET[digits[i]];
-  return out;
-}
-
-
-/**
- * Generate an opaque API key with the given prefix.
- * Returns the raw token (shown to the user once), the 12-char prefix used as a
- * DB lookup index, and the sha256(raw) hash to store in `tokens.token_hash`.
- */
-export async function generateOpaqueToken(
-  prefix: OpaquePrefix,
-): Promise<OpaqueToken> {
-  const random = crypto.getRandomValues(new Uint8Array(OPAQUE_RANDOM_BYTES));
-  const body = base62Encode(random);
-  const raw = `${prefix}${body}`;
-  const hash = await sha256Bytes(raw);
-  return { raw, prefix: raw.slice(0, OPAQUE_PREFIX_LEN), hash };
 }
 
 /**

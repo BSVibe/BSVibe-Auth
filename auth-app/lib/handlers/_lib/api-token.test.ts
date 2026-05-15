@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  generateOpaqueToken,
   generatePatJwt,
   generateRefreshToken,
   sha256Bytes,
@@ -14,7 +13,6 @@ import {
 const SIGNING_SECRET = "test-pat-signing-secret-32-bytes!!";
 const ISSUER = "https://auth.bsvibe.dev";
 
-const BASE62 = /^[0-9A-Za-z]+$/;
 const URLSAFE_B64 = /^[0-9A-Za-z_-]+$/;
 
 describe("sha256Bytes", () => {
@@ -46,44 +44,6 @@ describe("bytesToHex / hexToBytes", () => {
 
   it("rejects odd-length hex", () => {
     expect(() => hexToBytes("abc")).toThrow();
-  });
-});
-
-describe("generateOpaqueToken", () => {
-  it("starts with the requested prefix", async () => {
-    const sk = await generateOpaqueToken("bsv_sk_");
-    const pk = await generateOpaqueToken("bsv_pk_");
-    expect(sk.raw.startsWith("bsv_sk_")).toBe(true);
-    expect(pk.raw.startsWith("bsv_pk_")).toBe(true);
-  });
-
-  it("returns prefix as the first 12 characters of raw", async () => {
-    const t = await generateOpaqueToken("bsv_sk_");
-    expect(t.prefix).toBe(t.raw.slice(0, 12));
-    expect(t.prefix.length).toBe(12);
-  });
-
-  it("uses base62 alphabet for the random suffix", async () => {
-    const t = await generateOpaqueToken("bsv_sk_");
-    const suffix = t.raw.slice("bsv_sk_".length);
-    expect(suffix.length).toBeGreaterThan(20);
-    expect(BASE62.test(suffix)).toBe(true);
-  });
-
-  it("returns a sha256 hash of the raw token", async () => {
-    const t = await generateOpaqueToken("bsv_pk_");
-    const expected = await sha256Bytes(t.raw);
-    expect(t.hash).toEqual(expected);
-    expect(t.hash.byteLength).toBe(32);
-  });
-
-  it("produces unique tokens across 1000 calls", async () => {
-    const seen = new Set<string>();
-    for (let i = 0; i < 1000; i++) {
-      const t = await generateOpaqueToken("bsv_sk_");
-      seen.add(t.raw);
-    }
-    expect(seen.size).toBe(1000);
   });
 });
 

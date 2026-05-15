@@ -1,0 +1,21 @@
+-- Tier 3.1 Phase D — remove the RFC 8628 device-flow storage.
+--
+-- Background. With BSVibe-Auth#41 + the four product CLI cascade
+-- (bsvibe-cli-base 0.2.0) shipped, every supported caller mints PATs
+-- via the authorization_code + PKCE flow (RFC 7636 + RFC 8252). The
+-- /api/oauth/device/* endpoints are gone in this same change and
+-- `urn:ietf:params:oauth:grant-type:device_code` is removed from
+-- `.well-known/oauth-authorization-server`'s grant_types_supported.
+--
+-- The `device_codes` table has no foreign keys into other public-schema
+-- objects (`oauth_clients.client_id` is referenced FROM device_codes,
+-- not TO it), so the DROP is safe — outstanding rows are abandoned but
+-- they were single-use and TTL-bound (10 minutes) anyway. Any in-flight
+-- approval at the moment of deploy fails with `Cannot POST /...` and
+-- the CLI re-runs into the loopback path.
+--
+-- The corresponding `_e2e/supabase` mirror lands in Tier 3.1 Phase E
+-- with a +1 day prefix (20260519) to avoid schema_migrations PK
+-- collisions in the multi-repo mirror.
+
+drop table if exists public.device_codes;

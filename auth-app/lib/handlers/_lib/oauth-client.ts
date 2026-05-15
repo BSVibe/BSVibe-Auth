@@ -23,21 +23,21 @@ export interface OAuthClientRecord {
   client_id: string;
   /**
    * PBKDF2-encoded secret hash. `null` for `client_type='public'` rows
-   * (RFC 8628 device-flow CLIs ship with no secret); always present for
+   * (RFC 8252 native-app CLIs ship with no secret); always present for
    * confidential service-to-service backends.
    */
   client_secret_hash: string | null;
   /**
    * Bound tenant for confidential rows. `null` for public clients — the
    * issued PAT inherits its tenant from the user that approves at
-   * `/oauth/device/verify`, not from the client row.
+   * `/oauth/authorize`, not from the client row.
    */
   tenant_id: string | null;
   /**
    * Client class (added by `_e2e` migration `20260509_000001`).
-   * Confidential rows use the existing `client_credentials` grant; public
-   * rows are only valid for the device-flow grant
-   * (`urn:ietf:params:oauth:grant-type:device_code`).
+   * Confidential rows use the `client_credentials` grant; public rows
+   * are only valid for the `authorization_code` grant (RFC 6749 §4.1)
+   * with PKCE (RFC 7636).
    */
   client_type: OAuthClientType;
   allowed_audiences: string[];
@@ -45,7 +45,7 @@ export interface OAuthClientRecord {
   /**
    * Registered redirect URIs for the OAuth 2.0 authorization_code grant
    * (RFC 6749 §3.1.2). ``null`` for clients that don't use that grant
-   * (device-flow CLIs, service-to-service confidential clients).
+   * (service-to-service confidential clients).
    * Optional in TS so older test fixtures that don't model the column
    * still typecheck; the PostgREST select always populates it.
    */

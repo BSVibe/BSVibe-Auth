@@ -14,8 +14,11 @@
 -- approval at the moment of deploy fails with `Cannot POST /...` and
 -- the CLI re-runs into the loopback path.
 --
--- The corresponding `_e2e/supabase` mirror lands in Tier 3.1 Phase E
--- with a +1 day prefix (20260519) to avoid schema_migrations PK
--- collisions in the multi-repo mirror.
+-- Renamed from 20260518_000002 → 20260520_000001 in a follow-up commit
+-- because the supabase_migrations.schema_migrations PK uses only the
+-- 8-char YYYYMMDD prefix; the original filename collided with the Phase B
+-- migration 20260518_000001_cli_client_loopback_redirect_uris.sql
+-- (see memory `supabase-migration-version-collision-silent-rollback`).
+-- The corresponding _e2e mirror lands in Tier 3.1 Phase E at 20260519.
 
 drop table if exists public.device_codes;

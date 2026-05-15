@@ -472,8 +472,6 @@ function defaultInsertPatTokenRow(
         user_id: row.user_id,
         tenant_id: row.tenant_id,
         type: row.type,
-        prefix: null,
-        token_hash: null,
         jti: row.jti,
         audience: row.audience,
         scopes: row.scopes,

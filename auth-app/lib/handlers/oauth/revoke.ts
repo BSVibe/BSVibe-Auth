@@ -13,9 +13,13 @@
  *
  * Token type detection mirrors /api/tokens/introspect:
  *   - 3 JWT segments → decode jti, revoke tokens row by jti
- *   - base62 with bsv_sk_/bsv_pk_ prefix → revoke by token_hash
  *   - 43-byte base64url (refresh_token shape) → look up refresh_tokens
  *     by sha256 hash, revoke parent token + sibling refresh rows
+ *
+ * (The legacy ``bsv_sk_*`` / ``bsv_pk_*`` opaque-by-token_hash branch was
+ * retired in Tier 2 of the 2026-05 auth cleanup — issuance died in Tier 1,
+ * dispatch died in bsvibe-authz 1.3.0, and the ``tokens.token_hash`` column
+ * is dropped by the migration shipping with this PR.)
  */
 
 import type { VercelRequest, VercelResponse } from "../_lib/types";
@@ -172,32 +176,6 @@ async function revokeByRefreshHash(
   await revokeTokenById(ctx, id);
 }
 
-async function revokeByOpaqueHash(
-  ctx: RevokeContext,
-  rawToken: string,
-): Promise<void> {
-  const hashHex = bytesToPgHex(await sha256Bytes(rawToken));
-  const url = new URL(`${ctx.supabaseUrl}/rest/v1/tokens`);
-  url.searchParams.set("select", "id");
-  url.searchParams.set("token_hash", `eq.${hashHex}`);
-  url.searchParams.set("limit", "1");
-  const resp = await ctx
-    .fetchImpl(url.toString(), {
-      headers: {
-        apikey: ctx.serviceRoleKey,
-        Authorization: `Bearer ${ctx.serviceRoleKey}`,
-        Accept: "application/json",
-      },
-    })
-    .catch(() => null);
-  if (!resp || !resp.ok) return;
-  const rows = (await resp.json().catch(() => [])) as Array<{ id?: string }>;
-  if (!Array.isArray(rows) || rows.length === 0) return;
-  const id = rows[0].id;
-  if (!id) return;
-  await revokeTokenById(ctx, id);
-}
-
 function looksLikeJwt(s: string): boolean {
   return /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(s);
 }
@@ -296,10 +274,9 @@ export function createRevokeHandler(deps: RevokeHandlerDeps = {}) {
     if (looksLikeJwt(token)) {
       const jti = decodeJtiFromJwt(token);
       if (jti) await revokeByJti(ctx, jti);
-    } else if (token.startsWith("bsv_sk_") || token.startsWith("bsv_pk_")) {
-      await revokeByOpaqueHash(ctx, token);
     } else {
-      // Treat anything else as a refresh_token candidate.
+      // Treat anything else as a refresh_token candidate. (The legacy
+      // ``bsv_sk_*`` / ``bsv_pk_*`` opaque branch was retired in Tier 2.)
       await revokeByRefreshHash(ctx, token);
     }
 

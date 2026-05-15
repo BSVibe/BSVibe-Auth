@@ -6,9 +6,7 @@ import {
   type OAuthClientRecord,
 } from "../_lib/oauth-client";
 import {
-  generateOpaqueToken,
   generatePatJwt,
-  bytesToHex,
 } from "../_lib/api-token";
 
 const baseEnv = {
@@ -164,80 +162,11 @@ describe("api-tokens/introspect", () => {
     expect(captured.body).toEqual({ active: false });
   });
 
-  it("active=true for valid opaque api_key", async () => {
+  it("active=false for legacy bsv_sk_* opaque token (Tier 2 retirement)", async () => {
+    // Regression guard: the bsv_sk_*/bsv_pk_* opaque-token branch was
+    // retired in Tier 2 of the 2026-05 auth cleanup. Anything not JWT-shaped
+    // now returns active=false without ever touching the database.
     const record = await buildClientRecord();
-    const opaque = await generateOpaqueToken("bsv_sk_");
-    const tokenId = "33333333-3333-3333-3333-333333333333";
-    const expIso = new Date(Date.now() + 60_000).toISOString();
-    const dbRow = {
-      id: tokenId,
-      user_id: userId,
-      tenant_id: tenantId,
-      type: "api_key",
-      audience: ["bsgateway"],
-      scopes: ["bsgateway:models:read", "bsgateway:models:write"],
-      expires_at: expIso,
-      revoked_at: null,
-    };
-
-    const fetchCalls: { url: string; init?: RequestInit }[] = [];
-    const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
-      fetchCalls.push({ url, init });
-      const u = new URL(url);
-      if (u.pathname.endsWith("/rest/v1/tokens") && (init?.method ?? "GET") === "GET") {
-        return new Response(JSON.stringify([dbRow]), { status: 200 });
-      }
-      // last_used_at PATCH
-      return new Response("", { status: 204 });
-    }) as unknown as typeof fetch;
-
-    const handler = createIntrospectHandler({
-      lookupClient: vi.fn().mockResolvedValue(record),
-      fetchImpl,
-    });
-    const req = makeReq({
-      method: "POST",
-      headers: {
-        authorization: basicHeader(validClientId, validClientSecret),
-        "content-type": "application/x-www-form-urlencoded",
-      },
-      body: `token=${encodeURIComponent(opaque.raw)}`,
-    });
-    const { res, captured } = makeRes();
-    await handler(req, res);
-
-    expect(captured.statusCode).toBe(200);
-    const body = captured.body as Record<string, unknown>;
-    expect(body.active).toBe(true);
-    expect(body.sub).toBe(userId);
-    expect(body.tenant).toBe(tenantId);
-    expect(body.aud).toEqual(["bsgateway"]);
-    expect(body.scope).toBe("bsgateway:models:read bsgateway:models:write");
-    expect(body.client_id).toBe(validClientId);
-    expect(body.token_type).toBe("api_key");
-    // confirm body.exp present and an integer epoch second
-    expect(typeof body.exp).toBe("number");
-
-    // confirm lookup URL referenced prefix and token_hash filters
-    const lookupCall = fetchCalls.find((c) =>
-      c.url.includes("/rest/v1/tokens?"),
-    );
-    expect(lookupCall).toBeDefined();
-    const lookupU = new URL(lookupCall!.url);
-    expect(lookupU.searchParams.get("prefix")).toBe(`eq.${opaque.prefix}`);
-    expect(lookupU.searchParams.get("token_hash")).toBe(
-      `eq.\\x${bytesToHex(opaque.hash)}`,
-    );
-    expect(lookupU.searchParams.get("revoked_at")).toBe("is.null");
-
-    // best-effort last_used_at update issued (same path, PATCH method)
-    const patchCall = fetchCalls.find((c) => (c.init?.method ?? "") === "PATCH");
-    expect(patchCall).toBeDefined();
-  });
-
-  it("active=false when opaque token row not found", async () => {
-    const record = await buildClientRecord();
-    const opaque = await generateOpaqueToken("bsv_pk_");
     const fetchImpl = vi.fn(async () =>
       new Response("[]", { status: 200 }),
     ) as unknown as typeof fetch;
@@ -251,32 +180,7 @@ describe("api-tokens/introspect", () => {
         authorization: basicHeader(validClientId, validClientSecret),
         "content-type": "application/x-www-form-urlencoded",
       },
-      body: `token=${encodeURIComponent(opaque.raw)}`,
-    });
-    const { res, captured } = makeRes();
-    await handler(req, res);
-    expect(captured.statusCode).toBe(200);
-    expect(captured.body).toEqual({ active: false });
-  });
-
-  it("active=false when opaque token revoked (filter excludes it)", async () => {
-    // The revoked_at=is.null filter at the DB layer; if revoked, no row returned
-    const record = await buildClientRecord();
-    const opaque = await generateOpaqueToken("bsv_sk_");
-    const fetchImpl = vi.fn(async () =>
-      new Response("[]", { status: 200 }),
-    ) as unknown as typeof fetch;
-    const handler = createIntrospectHandler({
-      lookupClient: vi.fn().mockResolvedValue(record),
-      fetchImpl,
-    });
-    const req = makeReq({
-      method: "POST",
-      headers: {
-        authorization: basicHeader(validClientId, validClientSecret),
-        "content-type": "application/x-www-form-urlencoded",
-      },
-      body: `token=${encodeURIComponent(opaque.raw)}`,
+      body: `token=${encodeURIComponent("bsv_sk_legacy")}`,
     });
     const { res, captured } = makeRes();
     await handler(req, res);
@@ -454,39 +358,4 @@ describe("api-tokens/introspect", () => {
     expect(captured.body).toEqual({ active: false });
   });
 
-  it("response never includes raw token or hash bytes", async () => {
-    const record = await buildClientRecord();
-    const opaque = await generateOpaqueToken("bsv_sk_");
-    const dbRow = {
-      id: "33333333-3333-3333-3333-333333333333",
-      user_id: userId,
-      tenant_id: tenantId,
-      type: "api_key",
-      audience: ["bsgateway"],
-      scopes: ["bsgateway:models:read"],
-      expires_at: null,
-      revoked_at: null,
-      token_hash: "should-never-leak",
-    };
-    const fetchImpl = vi.fn(async () =>
-      new Response(JSON.stringify([dbRow]), { status: 200 }),
-    ) as unknown as typeof fetch;
-    const handler = createIntrospectHandler({
-      lookupClient: vi.fn().mockResolvedValue(record),
-      fetchImpl,
-    });
-    const req = makeReq({
-      method: "POST",
-      headers: {
-        authorization: basicHeader(validClientId, validClientSecret),
-        "content-type": "application/x-www-form-urlencoded",
-      },
-      body: `token=${encodeURIComponent(opaque.raw)}`,
-    });
-    const { res, captured } = makeRes();
-    await handler(req, res);
-    const serialized = JSON.stringify(captured.body);
-    expect(serialized).not.toContain("token_hash");
-    expect(serialized).not.toContain(opaque.raw);
-  });
 });

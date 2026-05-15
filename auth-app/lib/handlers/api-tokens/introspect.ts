@@ -7,13 +7,16 @@
  * `oauth_clients` row (same identities used by /api/oauth/token).
  *
  * Token shape detection:
- *   - `bsv_sk_…` / `bsv_pk_…` → opaque API key. Lookup by sha256 hash + 12-char
- *     prefix index. Active iff revoked_at IS NULL AND (expires_at IS NULL OR
- *     expires_at > now()).
  *   - 3 dot-separated segments → PAT JWT. Verify HS256 signature with
  *     SERVICE_TOKEN_SIGNING_SECRET; check exp; confirm not revoked by jti
  *     lookup.
  *   - Otherwise → { active: false }.
+ *
+ * (The legacy ``bsv_sk_*`` / ``bsv_pk_*`` opaque API-key path was retired in
+ * Tier 2 of the 2026-05 auth cleanup. Issuance died in Tier 1, the prefix
+ * dispatch died in bsvibe-authz 1.3.0, and the ``tokens.prefix`` /
+ * ``tokens.token_hash`` columns are dropped by the migration shipping with
+ * this PR.)
  *
  * Responses are always 200 OK per RFC 7662 §2.2 — failures from the introspector
  * never leak whether the token "looked valid". Only the caller-auth layer
@@ -31,10 +34,7 @@ import {
   type OAuthClientRecord,
 } from "../_lib/oauth-client";
 import {
-  bytesToHex,
   decodePatJwtPayload,
-  OPAQUE_PREFIX_LEN,
-  sha256Bytes,
   verifyPatJwtSignature,
   type PatJwtPayload,
 } from "../_lib/api-token";
@@ -55,14 +55,13 @@ interface TokenRow {
   id: string;
   user_id: string;
   tenant_id: string;
-  type: "pat" | "api_key";
+  type: "pat";
   audience: string[];
   scopes: string[];
   expires_at: string | null;
   revoked_at: string | null;
 }
 
-const OPAQUE_PREFIXES = ["bsv_sk_", "bsv_pk_"] as const;
 const TOKEN_LOOKUP_FIELDS =
   "id,user_id,tenant_id,type,audience,scopes,expires_at,revoked_at";
 
@@ -110,17 +109,9 @@ function readBody(req: VercelRequest): ParsedBody {
   return {};
 }
 
-function looksLikeOpaque(token: string): boolean {
-  return OPAQUE_PREFIXES.some((p) => token.startsWith(p));
-}
-
 function looksLikeJwt(token: string): boolean {
   const parts = token.split(".");
   return parts.length === 3 && parts.every((p) => p.length > 0);
-}
-
-function bytesToPgHex(b: Uint8Array): string {
-  return `\\x${bytesToHex(b)}`;
 }
 
 function expiresAtEpoch(expiresAt: string | null): number | undefined {
@@ -140,27 +131,6 @@ function isExpired(row: TokenRow, nowMs: number): boolean {
 interface SupabaseEnv {
   url: string;
   serviceRoleKey: string;
-}
-
-async function lookupOpaque(
-  env: SupabaseEnv,
-  fetchImpl: typeof fetch,
-  prefix: string,
-  hash: Uint8Array,
-): Promise<TokenRow | null> {
-  const url = new URL(`${env.url}/rest/v1/tokens`);
-  url.searchParams.set("select", TOKEN_LOOKUP_FIELDS);
-  url.searchParams.set("prefix", `eq.${prefix}`);
-  url.searchParams.set("token_hash", `eq.${bytesToPgHex(hash)}`);
-  url.searchParams.set("revoked_at", "is.null");
-  url.searchParams.set("limit", "1");
-  const resp = await fetchImpl(url.toString(), {
-    headers: supabaseServiceHeaders(env),
-  });
-  if (!resp.ok) return null;
-  const rows = (await resp.json()) as TokenRow[];
-  if (!Array.isArray(rows) || rows.length === 0) return null;
-  return rows[0];
 }
 
 async function lookupByJti(
@@ -209,7 +179,7 @@ interface IntrospectionResponse {
   scope?: string;
   exp?: number;
   client_id?: string;
-  token_type?: "api_key" | "pat";
+  token_type?: "pat";
   jti?: string;
 }
 
@@ -285,23 +255,8 @@ export function createIntrospectHandler(deps: IntrospectHandlerDeps = {}) {
     const nowMs = now();
     const inactive = (): VercelResponse => res.status(200).json({ active: false });
 
-    // Branch 1: opaque API key.
-    if (looksLikeOpaque(token)) {
-      if (token.length <= OPAQUE_PREFIX_LEN) return inactive();
-      const prefix = token.slice(0, OPAQUE_PREFIX_LEN);
-      const hash = await sha256Bytes(token);
-      const row = await lookupOpaque(env, fetchImpl, prefix, hash).catch(
-        () => null,
-      );
-      if (!row) return inactive();
-      if (isExpired(row, nowMs)) return inactive();
-      touchLastUsed(env, fetchImpl, row.id, new Date(nowMs).toISOString());
-      return res
-        .status(200)
-        .json(buildActive(row, credentials.clientId));
-    }
-
-    // Branch 2: PAT JWT.
+    // PAT JWT — only supported token shape after Tier 2 (the legacy
+    // ``bsv_sk_*`` / ``bsv_pk_*`` opaque branch was retired).
     if (looksLikeJwt(token)) {
       const signingSecret = process.env.SERVICE_TOKEN_SIGNING_SECRET;
       if (!signingSecret) return inactive();

@@ -5,14 +5,15 @@
  *  - `client_credentials`: machine-to-machine (PR #7, untouched).
  *  - `refresh_token`: single-use rotation of a PAT refresh token. Detects
  *    reuse and revokes the parent token + sibling refresh rows.
- *  - `urn:ietf:params:oauth:grant-type:device_code`: claims an `approved`
- *    device_codes row and mints a PAT bound to the client's tenant.
+ *  - `authorization_code`: PKCE-bound single-use claim from /oauth/authorize.
+ *    Used by the dashboard SPA and every BSVibe product CLI
+ *    (`<cli> login` via bsvibe-cli-base loopback flow).
  *
- * Spec extracts (RFC 6749 §4.4 / §6, RFC 8628 §3.4):
+ * Spec extracts (RFC 6749 §4.1 / §4.4 / §6, RFC 7636 §4):
  *  - audience required for client_credentials only (BSVibe extension).
  *  - refresh_token grant: response carries new access_token + new refresh_token.
- *  - device_code grant: standard error codes `authorization_pending`,
- *    `slow_down`, `expired_token`, `access_denied`.
+ *  - authorization_code grant: code_verifier is required (S256-only PKCE)
+ *    and the redirect_uri must match the one used at /authorize.
  *
  * Error codes use the OAuth2 surface (`invalid_request`, `invalid_client`,
  * `invalid_grant`, `unsupported_grant_type`, `invalid_scope`, `invalid_target`).
@@ -42,8 +43,6 @@ import {
   emitAuditEventBestEffort,
   type AuditEmitInput,
 } from "../_lib/audit-emit";
-import { claimDeviceCode as claimDeviceCodeImpl } from "./device/token";
-import type { ClaimDeviceCodeOutcome } from "./device/token";
 import {
   claimAuthorizationCode as claimAuthorizationCodeImpl,
   type ClaimAuthorizationCodeOutcome,
@@ -51,19 +50,18 @@ import {
 
 const CLIENT_CREDENTIALS_GRANT = "client_credentials";
 const REFRESH_TOKEN_GRANT = "refresh_token";
-const DEVICE_CODE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 const AUTHORIZATION_CODE_GRANT = "authorization_code";
 // Short-lived access tokens for the refresh-grant rotation path. The CLI
 // (and any RFC 6749 §6 client) re-mints these on 401 via refresh_token, so
 // the rotation cadence stays tight without disrupting interactive use.
 const PAT_TTL_S = 60 * 60; // 1h
-// Long-lived PAT for the device-authorization grant. Round 4 Finding 14:
-// MCP clients (Claude Code, IDE plugins) consume the env-var PAT directly
-// and have no built-in refresh path; a 1h TTL forced re-login every hour
-// during dogfood. The refresh_token remains the revocation handle — a
-// compromised device-flow PAT can still be revoked from the site
-// dashboard. 30d matches the /api/tokens manual-PAT default.
-const DEVICE_FLOW_PAT_TTL_S = 30 * 24 * 60 * 60; // 30d
+// Long-lived PAT for the authorization_code grant (CLI + MCP login).
+// Round 4 Finding 14: MCP clients (Claude Code, IDE plugins) consume the
+// env-var PAT directly and have no built-in refresh path; a 1h TTL forced
+// re-login every hour during dogfood. The refresh_token remains the
+// revocation handle — a compromised long-lived PAT can still be revoked
+// from the site dashboard. 30d matches the /api/tokens manual-PAT default.
+const LONG_PAT_TTL_S = 30 * 24 * 60 * 60; // 30d
 const REFRESH_TTL_S = 30 * 24 * 60 * 60; // 30d
 
 export interface TokenRecord {
@@ -112,11 +110,6 @@ export interface OAuthTokenHandlerDeps {
   ) => Promise<boolean>;
   /** Race fallback: revoke parent token + invalidate all sibling refresh rows. */
   revokeTokenForRace?: (tokenId: string) => Promise<void>;
-  /** device_code grant: atomic claim returning principal + scope/audience. */
-  claimDeviceCode?: (
-    deviceCode: string,
-    clientId: string,
-  ) => Promise<ClaimDeviceCodeOutcome>;
   /** authorization_code grant: atomic single-use claim + PKCE verify. */
   claimAuthorizationCode?: (input: {
     code: string;
@@ -124,7 +117,7 @@ export interface OAuthTokenHandlerDeps {
     redirectUri: string;
     codeVerifier: string;
   }) => Promise<ClaimAuthorizationCodeOutcome>;
-  /** Insert a tokens row for a freshly-minted device-flow PAT. */
+  /** Insert a tokens row for a freshly-minted authorization_code PAT. */
   insertPatTokenRow?: (row: PatTokenInsertRow) => Promise<boolean>;
   /** Audit emit (best-effort). */
   emitAudit?: (input: AuditEmitInput) => Promise<void>;
@@ -138,7 +131,6 @@ interface ParsedBody {
   client_id?: string;
   client_secret?: string;
   refresh_token?: string;
-  device_code?: string;
   code?: string;
   redirect_uri?: string;
   code_verifier?: string;
@@ -151,7 +143,6 @@ const PARSED_KEYS = [
   "client_id",
   "client_secret",
   "refresh_token",
-  "device_code",
   "code",
   "redirect_uri",
   "code_verifier",
@@ -414,23 +405,6 @@ function defaultRevokeTokenForRace(
   };
 }
 
-function defaultClaimDeviceCode(
-  fetchImpl: typeof fetch,
-  now: () => number,
-): (deviceCode: string, clientId: string) => Promise<ClaimDeviceCodeOutcome> {
-  return (deviceCode, clientId) => {
-    const url = process.env.SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!url || !key) return Promise.resolve({ kind: "not_found" });
-    return claimDeviceCodeImpl(
-      { url, serviceRoleKey: key },
-      deviceCode,
-      clientId,
-      { fetchImpl, now },
-    );
-  };
-}
-
 function defaultClaimAuthorizationCode(
   fetchImpl: typeof fetch,
   now: () => number,
@@ -497,8 +471,6 @@ export function createOAuthTokenHandler(deps: OAuthTokenHandlerDeps = {}) {
     deps.insertRefreshTokenRow ?? defaultInsertRefreshTokenRow(fetchImpl);
   const revokeTokenForRace =
     deps.revokeTokenForRace ?? defaultRevokeTokenForRace(fetchImpl, now);
-  const claimDeviceCode =
-    deps.claimDeviceCode ?? defaultClaimDeviceCode(fetchImpl, now);
   const claimAuthorizationCode =
     deps.claimAuthorizationCode ??
     defaultClaimAuthorizationCode(fetchImpl, now);
@@ -558,19 +530,6 @@ export function createOAuthTokenHandler(deps: OAuthTokenHandlerDeps = {}) {
           getTokenRecord,
           insertRefreshTokenRow,
           revokeTokenForRace,
-          emitAudit,
-        });
-      case DEVICE_CODE_GRANT:
-        return handleDeviceCode({
-          res,
-          body,
-          signingSecret,
-          issuer,
-          now,
-          lookupClient,
-          claimDeviceCode,
-          insertPatTokenRow,
-          insertRefreshTokenRow,
           emitAudit,
         });
       case AUTHORIZATION_CODE_GRANT:
@@ -633,10 +592,10 @@ async function handleClientCredentials(ctx: ClientCredentialsCtx) {
     return oauthError(res, 401, "invalid_client");
   }
 
-  // Public clients (RFC 8628 device-flow CLIs) ship with no secret and
-  // are only valid for the device-flow grant. Reject early with the
-  // RFC 6749 §5.2 ``unauthorized_client`` code so the failure mode is
-  // distinct from "secret mismatch".
+  // Public clients (RFC 8252 native-app CLIs) ship with no secret and
+  // are only valid for the authorization_code grant. Reject early with
+  // the RFC 6749 §5.2 ``unauthorized_client`` code so the failure mode
+  // is distinct from "secret mismatch".
   if (record.client_type === "public" || record.client_secret_hash === null) {
     return oauthError(
       res,
@@ -837,168 +796,6 @@ async function handleRefreshToken(ctx: RefreshTokenCtx) {
   });
 }
 
-interface DeviceCodeCtx {
-  res: VercelResponse;
-  body: ParsedBody;
-  signingSecret: string;
-  issuer: string;
-  now: () => number;
-  lookupClient: (id: string) => Promise<OAuthClientRecord | null>;
-  claimDeviceCode: (
-    deviceCode: string,
-    clientId: string,
-  ) => Promise<ClaimDeviceCodeOutcome>;
-  insertPatTokenRow: (row: PatTokenInsertRow) => Promise<boolean>;
-  insertRefreshTokenRow: (
-    tokenId: string,
-    hash: Uint8Array,
-    expiresAt: string,
-  ) => Promise<boolean>;
-  emitAudit: (input: AuditEmitInput) => Promise<void>;
-}
-
-async function handleDeviceCode(ctx: DeviceCodeCtx) {
-  const {
-    res,
-    body,
-    signingSecret,
-    issuer,
-    now,
-    lookupClient,
-    claimDeviceCode,
-    insertPatTokenRow,
-    insertRefreshTokenRow,
-    emitAudit,
-  } = ctx;
-
-  if (!body.device_code) {
-    return oauthError(res, 400, "invalid_request", "device_code is required");
-  }
-  if (!body.client_id) {
-    return oauthError(res, 400, "invalid_request", "client_id is required");
-  }
-
-  const client = await lookupClient(body.client_id);
-  if (!client || client.revoked_at !== null) {
-    return oauthError(res, 401, "invalid_client");
-  }
-
-  const outcome = await claimDeviceCode(body.device_code, body.client_id);
-  switch (outcome.kind) {
-    case "pending":
-      return oauthError(res, 400, "authorization_pending");
-    case "denied":
-      return oauthError(res, 400, "access_denied");
-    case "expired":
-      return oauthError(res, 400, "expired_token");
-    case "consumed":
-    case "not_found":
-      return oauthError(res, 400, "invalid_grant");
-    case "claimed":
-      break;
-  }
-
-  if (!outcome.userId) {
-    return oauthError(
-      res,
-      400,
-      "invalid_grant",
-      "device approval is missing a principal",
-    );
-  }
-
-  // Tenant resolution:
-  //   - public client (cli): row's tenant_id stamped at /verify approve
-  //   - confidential client: oauth_clients.tenant_id (legacy path)
-  // Falling back to client.tenant_id covers the in-flight upgrade window
-  // when device_codes.tenant_id is null because the row was approved
-  // before this verify-handler redeploy.
-  const tenantId = outcome.tenantId ?? client.tenant_id;
-  if (!tenantId) {
-    return oauthError(
-      res,
-      400,
-      "invalid_grant",
-      "device approval is missing a tenant; user must belong to at least one tenant",
-    );
-  }
-
-  const tokenId = crypto.randomUUID();
-  const jti = crypto.randomUUID();
-  const nowMs = now();
-  // Device-flow PATs use the long TTL — MCP clients without refresh
-  // (Claude Code, IDE plugins) need an envelope big enough that daily
-  // use doesn't hit constant re-login. The refresh_token below still
-  // gives the user a revocation handle for the full DEVICE_FLOW_PAT_TTL_S.
-  const expSec = Math.floor(nowMs / 1000) + DEVICE_FLOW_PAT_TTL_S;
-  const expiresAtIso = new Date(
-    nowMs + DEVICE_FLOW_PAT_TTL_S * 1000,
-  ).toISOString();
-
-  const accessToken = await generatePatJwt(
-    {
-      sub: outcome.userId,
-      tenant: tenantId,
-      aud: outcome.audience,
-      scope: outcome.scope,
-      jti,
-      exp: expSec,
-    },
-    { signingSecret, issuer },
-  );
-
-  const insertedToken = await insertPatTokenRow({
-    id: tokenId,
-    user_id: outcome.userId,
-    tenant_id: tenantId,
-    type: "pat",
-    jti,
-    audience: outcome.audience,
-    scopes: outcome.scope,
-    name: `device:${body.client_id}`,
-    expires_at: expiresAtIso,
-  });
-  if (!insertedToken) {
-    return res.status(502).json({ error: "Token insert failed" });
-  }
-
-  const refresh = await generateRefreshToken();
-  const refreshExpiresIso = new Date(
-    nowMs + REFRESH_TTL_S * 1000,
-  ).toISOString();
-  const insertedRefresh = await insertRefreshTokenRow(
-    tokenId,
-    refresh.hash,
-    refreshExpiresIso,
-  );
-  if (!insertedRefresh) {
-    return res.status(502).json({ error: "Refresh token insert failed" });
-  }
-
-  void emitAudit({
-    eventType: "token.created",
-    tenantId,
-    actor: { type: "user", id: outcome.userId },
-    data: {
-      token_id: tokenId,
-      type: "pat",
-      grant: "device_code",
-      client_id: body.client_id,
-      scopes: outcome.scope,
-      audience: outcome.audience,
-      jti,
-    },
-  });
-
-  return res.status(200).json({
-    access_token: accessToken,
-    refresh_token: refresh.raw,
-    token_type: "Bearer",
-    expires_in: DEVICE_FLOW_PAT_TTL_S,
-    scope: outcome.scope.join(" "),
-  });
-}
-
 interface AuthorizationCodeCtx {
   res: VercelResponse;
   body: ParsedBody;
@@ -1106,9 +903,9 @@ async function handleAuthorizationCode(ctx: AuthorizationCodeCtx) {
   const tokenId = crypto.randomUUID();
   const jti = crypto.randomUUID();
   const nowMs = now();
-  const expSec = Math.floor(nowMs / 1000) + DEVICE_FLOW_PAT_TTL_S;
+  const expSec = Math.floor(nowMs / 1000) + LONG_PAT_TTL_S;
   const expiresAtIso = new Date(
-    nowMs + DEVICE_FLOW_PAT_TTL_S * 1000,
+    nowMs + LONG_PAT_TTL_S * 1000,
   ).toISOString();
 
   const accessToken = await generatePatJwt(
@@ -1170,7 +967,7 @@ async function handleAuthorizationCode(ctx: AuthorizationCodeCtx) {
     access_token: accessToken,
     refresh_token: refresh.raw,
     token_type: "Bearer",
-    expires_in: DEVICE_FLOW_PAT_TTL_S,
+    expires_in: LONG_PAT_TTL_S,
     scope: tokenScopes.join(" "),
   });
 }

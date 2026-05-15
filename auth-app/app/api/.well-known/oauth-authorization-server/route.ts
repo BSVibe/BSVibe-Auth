@@ -41,7 +41,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       "authorization_code",
       "refresh_token",
       "client_credentials",
-      "urn:ietf:params:oauth:grant-type:device_code",
     ],
     token_endpoint_auth_methods_supported: [
       "none",

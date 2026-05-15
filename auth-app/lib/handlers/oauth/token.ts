@@ -864,7 +864,16 @@ async function handleAuthorizationCode(ctx: AuthorizationCodeCtx) {
     case "client_mismatch":
     case "redirect_uri_mismatch":
     case "pkce_mismatch":
-      return oauthError(res, 400, "invalid_grant");
+      // RFC 6749 §5.2 — error_description SHOULD be a human-readable
+      // ASCII summary. Surfacing the specific outcome kind makes
+      // /api/oauth/token failures self-diagnosable from the client
+      // response without server-side log diving.
+      return oauthError(
+        res,
+        400,
+        "invalid_grant",
+        `authorization code ${outcome.kind.replace(/_/g, " ")}`,
+      );
     case "claimed":
       break;
   }

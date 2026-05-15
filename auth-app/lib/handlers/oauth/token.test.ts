@@ -646,8 +646,55 @@ describe("oauth/token handler — authorization_code grant", () => {
     await handler(req, res);
 
     expect(captured.statusCode).toBe(400);
-    expect(captured.body).toMatchObject({ error: "invalid_grant" });
+    expect(captured.body).toMatchObject({
+      error: "invalid_grant",
+      error_description: "authorization code pkce mismatch",
+    });
   });
+
+  it.each([
+    ["not_found", "authorization code not found"],
+    ["used", "authorization code used"],
+    ["expired", "authorization code expired"],
+    ["client_mismatch", "authorization code client mismatch"],
+    ["redirect_uri_mismatch", "authorization code redirect uri mismatch"],
+  ] as const)(
+    "400 invalid_grant surfaces outcome '%s' as error_description",
+    async (kind, description) => {
+      const lookupClient = vi.fn().mockResolvedValue(await buildClient());
+      const claimAuthorizationCode = vi
+        .fn<
+          (input: {
+            code: string;
+            expectedClientId: string;
+            redirectUri: string;
+            codeVerifier: string;
+          }) => Promise<ClaimAuthorizationCodeOutcome>
+        >()
+        .mockResolvedValue({ kind } as ClaimAuthorizationCodeOutcome);
+      const handler = createOAuthTokenHandler({
+        lookupClient,
+        claimAuthorizationCode,
+      });
+      const req = makeReq({
+        method: "POST",
+        body: {
+          grant_type: "authorization_code",
+          code,
+          redirect_uri: redirectUri,
+          code_verifier: codeVerifier,
+          client_id: "claude-code-mcp",
+        },
+      });
+      const { res, captured } = makeRes();
+      await handler(req, res);
+      expect(captured.statusCode).toBe(400);
+      expect(captured.body).toMatchObject({
+        error: "invalid_grant",
+        error_description: description,
+      });
+    },
+  );
 
   it("200 mints PAT + refresh on claimed authorization_code", async () => {
     const lookupClient = vi.fn().mockResolvedValue(await buildClient());

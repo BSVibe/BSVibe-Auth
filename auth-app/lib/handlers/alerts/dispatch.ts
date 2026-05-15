@@ -39,7 +39,11 @@ const UUID_PATTERN =
 const EVENT_TYPE_PATTERN = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/;
 const ACTOR_TYPES = new Set(["user", "service", "system"]);
 const REQUIRED_AUDIENCE = "bsvibe-auth";
-const REQUIRED_SCOPE = "alerts.dispatch";
+// Tier 3.3 (2026-05-15): renamed from bare `alerts.dispatch` to
+// MCP-grammar `bsvibe-auth:alerts.dispatch` so every scope follows
+// `<audience>:<resource>` and the BSVIBE_AUTH_INTERNAL_SCOPES carve-out
+// can be retired.
+const REQUIRED_SCOPE = "bsvibe-auth:alerts.dispatch";
 
 const SEVERITY_RANK: Record<AlertSeverity, number> = {
   info: 0,

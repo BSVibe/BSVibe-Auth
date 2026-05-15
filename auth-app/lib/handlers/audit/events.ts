@@ -37,7 +37,11 @@ const UUID_PATTERN =
 const EVENT_TYPE_PATTERN = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/;
 const ACTOR_TYPES = new Set(["user", "service", "system"]);
 const REQUIRED_AUDIENCE = "bsvibe-auth";
-const REQUIRED_SCOPE = "audit.write";
+// Tier 3.3 (2026-05-15): renamed from bare `audit.write` to MCP-grammar
+// `bsvibe-auth:audit.write` so every scope in the system follows
+// `<audience>:<resource>` and the BSVIBE_AUTH_INTERNAL_SCOPES carve-out
+// can be retired.
+const REQUIRED_SCOPE = "bsvibe-auth:audit.write";
 const MAX_BATCH = 100;
 
 function isValidActor(value: unknown): value is { type: string; id: string } {

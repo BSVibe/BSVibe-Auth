@@ -183,7 +183,9 @@ export async function claimAuthorizationCode(
   //    matches; a mismatch here means an attacker is trying to redeem a
   //    code they intercepted but can't supply the verifier for.
   if (row.client_id !== input.expectedClientId) return { kind: "client_mismatch" };
-  if (row.redirect_uri !== input.redirectUri) return { kind: "redirect_uri_mismatch" };
+  if (!redirectUrisMatch(row.redirect_uri, input.redirectUri)) {
+    return { kind: "redirect_uri_mismatch" };
+  }
   if (!verifyPkce(row.code_challenge, row.code_challenge_method, input.codeVerifier)) {
     return { kind: "pkce_mismatch" };
   }
@@ -210,6 +212,44 @@ function defaultRandomCode(): string {
 
 function base64UrlEncode(buf: Buffer): string {
   return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
+
+/**
+ * Compare the stored `redirect_uri` against the value supplied on the
+ * token-exchange leg. Per RFC 8252 §7.3, loopback hostnames
+ * (`127.0.0.1`, `localhost`, `[::1]`) refer to the same endpoint and
+ * MUST be treated as interchangeable. Non-loopback URIs require strict
+ * string equality.
+ *
+ * Background. The auth-app surfaces `127.0.0.1` requests as
+ * `localhost` once the request makes a round-trip through the
+ * /oauth/authorize → /login bounce — the precise normalization point
+ * is in the upstream URL parser (Next.js / Vercel edge), not in our
+ * code, but the observable behavior is the same. Strict equality
+ * burns the code with `redirect_uri_mismatch`, blocking every CLI
+ * client that hard-codes `127.0.0.1` (bsvibe-cli-base 0.2.0+
+ * loopback listener).
+ */
+export function redirectUrisMatch(stored: string, supplied: string): boolean {
+  if (stored === supplied) return true;
+  let s: URL;
+  let r: URL;
+  try {
+    s = new URL(stored);
+    r = new URL(supplied);
+  } catch {
+    return false;
+  }
+  if (s.protocol !== r.protocol) return false;
+  if (s.pathname !== r.pathname) return false;
+  if (s.search !== r.search) return false;
+  if (s.port !== r.port) return false;
+  if (!LOOPBACK_HOSTS.has(s.hostname) || !LOOPBACK_HOSTS.has(r.hostname)) {
+    return false;
+  }
+  return true;
 }
 
 /**

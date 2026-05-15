@@ -105,8 +105,18 @@ export function createAuditEventsHandler(deps: AuditEventsHandlerDeps = {}) {
     }
 
     // ---- Auth: service JWT ----
+    // The shared `bsvibe-audit` relay client sends the service JWT in the
+    // `X-Service-Token` header (its documented contract — see
+    // bsvibe-audit/client.py). Accept that as the canonical header, with
+    // `Authorization: Bearer` kept as a fallback for direct callers.
+    const xServiceToken = req.headers["x-service-token"];
+    const headerToken = Array.isArray(xServiceToken)
+      ? xServiceToken[0]
+      : xServiceToken;
     const authHeader = req.headers.authorization ?? "";
-    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+    const token = (
+      headerToken ?? authHeader.replace(/^Bearer\s+/i, "")
+    ).trim();
     if (!token) {
       return res.status(401).json({ error: "Not authenticated" });
     }

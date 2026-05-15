@@ -150,6 +150,25 @@ describe("audit/events handler", () => {
     expect(rows[0].id).toBe(validEvent.event_id);
   });
 
+  it("accepts the service token via the X-Service-Token header (bsvibe-audit relay contract)", async () => {
+    const token = await makeServiceToken();
+    const fetchImpl = makeFetchOk();
+    const handler = createAuditEventsHandler({ fetchImpl });
+    // The shared bsvibe-audit relay client ships the JWT in X-Service-Token,
+    // not Authorization: Bearer — this is the path every product backend uses.
+    const req = makeReq({
+      method: "POST",
+      body: { events: [validEvent] },
+      headers: { "x-service-token": token },
+    });
+    const { res, captured } = makeRes();
+    await handler(req, res);
+
+    expect(captured.statusCode).toBe(200);
+    const body = captured.body as { accepted: number };
+    expect(body.accepted).toBe(1);
+  });
+
   it("rejects malformed events but still ingests valid ones", async () => {
     const token = await makeServiceToken();
     const fetchImpl = makeFetchOk();

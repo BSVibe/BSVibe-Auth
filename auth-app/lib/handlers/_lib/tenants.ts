@@ -113,6 +113,49 @@ export async function getMembership(
 }
 
 /**
+ * Idempotent personal-tenant provisioning.
+ *
+ * Calls the `ensure_personal_tenant(p_user_id, p_display_name)` RPC
+ * (defined in `20260518_000001_ensure_personal_tenant_fn.sql`). The
+ * function returns the user's existing primary tenant_id if they already
+ * have one, otherwise creates a personal tenant + owner membership.
+ *
+ * Service-role only — the RPC's `security definer` runs writes that
+ * end-user JWTs cannot perform under RLS.
+ */
+export async function ensurePersonalTenant(
+  cfg: SupabaseConfig,
+  userId: string,
+  displayName: string | null,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
+  const url = `${cfg.url}/rest/v1/rpc/ensure_personal_tenant`;
+  const resp = await fetchImpl(url, {
+    method: "POST",
+    headers: {
+      apikey: cfg.serviceRoleKey,
+      Authorization: `Bearer ${cfg.serviceRoleKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      p_user_id: userId,
+      p_display_name: displayName ?? "",
+    }),
+  });
+
+  if (!resp.ok) {
+    throw new Error(`ensure_personal_tenant_failed: ${resp.status}`);
+  }
+
+  const body = (await resp.json()) as unknown;
+  if (typeof body !== "string" || body.length === 0) {
+    throw new Error("ensure_personal_tenant_invalid_response");
+  }
+  return body;
+}
+
+/**
  * Determine the active tenant ID for a user.
  *
  * Priority:

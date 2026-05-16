@@ -250,6 +250,103 @@ describe("api-tokens/introspect", () => {
     expect(body.jti).toBe(jti);
   });
 
+  it("active=true response carries the holder's tenant role (Tier 5)", async () => {
+    const record = await buildClientRecord();
+    const jti = "66666666-6666-6666-6666-666666666666";
+    const exp = Math.floor(Date.now() / 1000) + 600;
+    const pat = await generatePatJwt(
+      { sub: userId, tenant: tenantId, aud: ["bsgateway"], scope: ["bsgateway:models:read"], jti, exp },
+      { signingSecret: baseEnv.SERVICE_TOKEN_SIGNING_SECRET, issuer: baseEnv.SERVICE_TOKEN_ISSUER },
+    );
+    const dbRow = {
+      id: "77777777-7777-7777-7777-777777777777",
+      user_id: userId,
+      tenant_id: tenantId,
+      type: "pat",
+      audience: ["bsgateway"],
+      scopes: ["bsgateway:models:read"],
+      expires_at: new Date(exp * 1000).toISOString(),
+      revoked_at: null,
+    };
+    // URL-aware mock: /tokens lookup vs /tenant_members role lookup.
+    const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
+      if ((init?.method ?? "GET") !== "GET") {
+        return new Response("", { status: 204 });
+      }
+      if (url.includes("/tenant_members")) {
+        return new Response(JSON.stringify([{ role: "admin" }]), { status: 200 });
+      }
+      return new Response(JSON.stringify([dbRow]), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const handler = createIntrospectHandler({
+      lookupClient: vi.fn().mockResolvedValue(record),
+      fetchImpl,
+    });
+    const req = makeReq({
+      method: "POST",
+      headers: {
+        authorization: basicHeader(validClientId, validClientSecret),
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: `token=${encodeURIComponent(pat)}`,
+    });
+    const { res, captured } = makeRes();
+    await handler(req, res);
+    expect(captured.statusCode).toBe(200);
+    const body = captured.body as Record<string, unknown>;
+    expect(body.active).toBe(true);
+    expect(body.role).toBe("admin");
+  });
+
+  it("active=true response omits role when holder has no membership", async () => {
+    const record = await buildClientRecord();
+    const jti = "88888888-8888-8888-8888-888888888888";
+    const exp = Math.floor(Date.now() / 1000) + 600;
+    const pat = await generatePatJwt(
+      { sub: userId, tenant: tenantId, aud: ["bsgateway"], scope: ["bsgateway:models:read"], jti, exp },
+      { signingSecret: baseEnv.SERVICE_TOKEN_SIGNING_SECRET, issuer: baseEnv.SERVICE_TOKEN_ISSUER },
+    );
+    const dbRow = {
+      id: "99999999-9999-9999-9999-999999999999",
+      user_id: userId,
+      tenant_id: tenantId,
+      type: "pat",
+      audience: ["bsgateway"],
+      scopes: ["bsgateway:models:read"],
+      expires_at: new Date(exp * 1000).toISOString(),
+      revoked_at: null,
+    };
+    const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
+      if ((init?.method ?? "GET") !== "GET") {
+        return new Response("", { status: 204 });
+      }
+      if (url.includes("/tenant_members")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      return new Response(JSON.stringify([dbRow]), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const handler = createIntrospectHandler({
+      lookupClient: vi.fn().mockResolvedValue(record),
+      fetchImpl,
+    });
+    const req = makeReq({
+      method: "POST",
+      headers: {
+        authorization: basicHeader(validClientId, validClientSecret),
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: `token=${encodeURIComponent(pat)}`,
+    });
+    const { res, captured } = makeRes();
+    await handler(req, res);
+    expect(captured.statusCode).toBe(200);
+    const body = captured.body as Record<string, unknown>;
+    expect(body.active).toBe(true);
+    expect(body.role).toBeUndefined();
+  });
+
   it("active=false for PAT JWT with bad signature", async () => {
     const record = await buildClientRecord();
     const exp = Math.floor(Date.now() / 1000) + 600;

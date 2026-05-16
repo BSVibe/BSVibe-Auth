@@ -152,6 +152,33 @@ async function lookupByJti(
   return rows[0];
 }
 
+/**
+ * Look up the token holder's role on the token's tenant. Tier 5 — the
+ * caller (a product backend's bsvibe-authz) surfaces this onto
+ * `User.app_metadata.role`, which drives `require_permission` lazy
+ * tuple-provisioning and `require_admin`. Returns null when the user
+ * has no membership row (the token is then effectively role-less).
+ */
+async function lookupRole(
+  env: SupabaseEnv,
+  fetchImpl: typeof fetch,
+  userId: string,
+  tenantId: string,
+): Promise<string | null> {
+  const url = new URL(`${env.url}/rest/v1/tenant_members`);
+  url.searchParams.set("select", "role");
+  url.searchParams.set("user_id", `eq.${userId}`);
+  url.searchParams.set("tenant_id", `eq.${tenantId}`);
+  url.searchParams.set("limit", "1");
+  const resp = await fetchImpl(url.toString(), {
+    headers: supabaseServiceHeaders(env),
+  });
+  if (!resp.ok) return null;
+  const rows = (await resp.json()) as Array<{ role?: string }>;
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  return typeof rows[0].role === "string" ? rows[0].role : null;
+}
+
 function touchLastUsed(
   env: SupabaseEnv,
   fetchImpl: typeof fetch,
@@ -181,6 +208,7 @@ interface IntrospectionResponse {
   client_id?: string;
   token_type?: "pat";
   jti?: string;
+  role?: string;
 }
 
 function buildActive(
@@ -188,6 +216,7 @@ function buildActive(
   callerClientId: string,
   patExp?: number,
   jti?: string,
+  role?: string | null,
 ): IntrospectionResponse {
   const exp = patExp ?? expiresAtEpoch(row.expires_at);
   const out: IntrospectionResponse = {
@@ -201,6 +230,7 @@ function buildActive(
   };
   if (typeof exp === "number") out.exp = exp;
   if (jti) out.jti = jti;
+  if (role) out.role = role;
   return out;
 }
 
@@ -282,9 +312,15 @@ export function createIntrospectHandler(deps: IntrospectHandlerDeps = {}) {
       if (!row) return inactive();
       if (isExpired(row, nowMs)) return inactive();
       touchLastUsed(env, fetchImpl, row.id, new Date(nowMs).toISOString());
+      const role = await lookupRole(
+        env,
+        fetchImpl,
+        row.user_id,
+        row.tenant_id,
+      ).catch(() => null);
       return res
         .status(200)
-        .json(buildActive(row, credentials.clientId, expSec, payload.jti));
+        .json(buildActive(row, credentials.clientId, expSec, payload.jti, role));
     }
 
     return inactive();

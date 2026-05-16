@@ -35,6 +35,22 @@ import {
 // for clients whose source code we ship.
 const TRUSTED_CLIENT_IDS = new Set(["claude-code-mcp", "cli"]);
 
+/**
+ * Whether a client may skip the consent HTML page.
+ *
+ * Statically-seeded first-party clients are in TRUSTED_CLIENT_IDS. Real
+ * Claude Code, however, registers per-install via RFC 7591 Dynamic
+ * Client Registration and receives a generated `dcr-*` client_id — not
+ * in the static set. Without this, `/oauth/authorize` serves a 200 HTML
+ * consent page that the MCP OAuth driver cannot process, leaving
+ * `.credentials.json` with an empty accessToken (Round 5 dogfood bug).
+ * DCR clients are first-party by construction (registration is gated by
+ * the same auth-server login), so they are consent-skip-eligible.
+ */
+export function isConsentSkipEligible(clientId: string): boolean {
+  return TRUSTED_CLIENT_IDS.has(clientId) || clientId.startsWith("dcr-");
+}
+
 export interface AuthorizeHandlerDeps {
   resolveUser: (
     req: VercelRequest,
@@ -99,8 +115,8 @@ async function dispatch(
       res.redirect(302, outcome.loginPath);
       return;
     case "needs_consent": {
-      // Trusted clients skip consent and commit immediately.
-      if (TRUSTED_CLIENT_IDS.has(outcome.client.client_id) || req.method === "POST") {
+      // Trusted + DCR clients skip consent and commit immediately.
+      if (isConsentSkipEligible(outcome.client.client_id) || req.method === "POST") {
         const next = await commitConsent(env, {
           ...params,
           client: outcome.client,

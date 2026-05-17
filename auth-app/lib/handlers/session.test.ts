@@ -12,16 +12,10 @@ const baseEnv = {
   SUPABASE_URL: "https://test.supabase.co",
   SUPABASE_ANON_KEY: "anon-key",
   SUPABASE_SERVICE_ROLE_KEY: "service-role-key",
-  USER_JWT_SECRET: "test-user-jwt-secret",
   USER_JWT_ISSUER: "https://test.supabase.co/auth/v1",
   USER_JWT_AUDIENCE: "authenticated",
   ALLOWED_REDIRECT_ORIGINS: "https://app.bsvibe.dev",
 };
-
-function decodeJwtPayload<T = Record<string, unknown>>(token: string): T {
-  const [, payload] = token.split(".");
-  return JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as T;
-}
 
 describe("session handler", () => {
   let envBackup: NodeJS.ProcessEnv;
@@ -82,8 +76,9 @@ describe("session handler", () => {
     expect(body.expires_in).toBe(3600);
     expect(body.tenants).toEqual(mockTenants);
     expect(body.active_tenant_id).toBe("p1");
-    expect(body.access_token).not.toBe(supabaseTokenResponse.access_token);
-    expect(decodeJwtPayload<{ app_metadata: { tenant_id: string } }>(String(body.access_token)).app_metadata.tenant_id).toBe("p1");
+    // Tier 3.2: /api/session returns the raw Supabase access_token
+    // unmodified — the wrapped HS256 re-signer was retired.
+    expect(body.access_token).toBe(supabaseTokenResponse.access_token);
     const setCookie = getSetCookieHeader(captured);
     expect(setCookie).toMatch(/bsvibe_session=rt-new/);
     expect(setCookie).toMatch(/HttpOnly/);
@@ -233,7 +228,7 @@ describe("session handler", () => {
     expect(setCookie).toMatch(/bsvibe_session=rt-new/);
   });
 
-  it("GET returns a BSVibe session JWT with active tenant claims", async () => {
+  it("GET returns the raw Supabase access_token (Tier 3.2 — wrapper retired)", async () => {
     const supabaseTokenResponse = {
       access_token:
         "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9." +
@@ -260,22 +255,13 @@ describe("session handler", () => {
     await handler(req, res);
 
     expect(captured.statusCode).toBe(200);
-    const body = captured.body as Record<string, string>;
-    expect(body.access_token).not.toBe(supabaseTokenResponse.access_token);
-    const payload = decodeJwtPayload<{
-      sub: string;
-      email: string;
-      active_tenant_id: string;
-      app_metadata: { tenant_id: string; role: string };
-      aud: string;
-      iss: string;
-    }>(body.access_token);
-    expect(payload.sub).toBe("user-abc");
-    expect(payload.email).toBe("a@b.c");
-    expect(payload.active_tenant_id).toBe("p1");
-    expect(payload.app_metadata).toEqual({ tenant_id: "p1", role: "owner" });
-    expect(payload.aud).toBe("authenticated");
-    expect(payload.iss).toBe("https://test.supabase.co/auth/v1");
+    const body = captured.body as Record<string, unknown>;
+    // Tier 3.2: the wrapped HS256 re-signer (issueSessionJwt) is gone —
+    // /api/session returns the raw Supabase access_token byte-for-byte.
+    // The active tenant rides as the response-body `active_tenant_id`
+    // field and the `X-Active-Tenant` request header, never a JWT claim.
+    expect(body.access_token).toBe(supabaseTokenResponse.access_token);
+    expect(body.active_tenant_id).toBe("p1");
   });
 
   it("GET clears cookie and returns 401 when refresh fails", async () => {

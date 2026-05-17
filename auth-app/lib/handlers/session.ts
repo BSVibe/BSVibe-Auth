@@ -100,76 +100,12 @@ function decodeAccessTokenPayload(token: string): AccessTokenPayload | null {
   }
 }
 
-function base64UrlEncode(bytes: Uint8Array): string {
-  let binary = "";
-  for (const b of bytes) binary += String.fromCharCode(b);
-  return btoa(binary)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-}
-
-function base64UrlEncodeJSON(value: unknown): string {
-  return base64UrlEncode(new TextEncoder().encode(JSON.stringify(value)));
-}
-
-async function hmacSha256(secret: string, message: string): Promise<Uint8Array> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const sig = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(message),
-  );
-  return new Uint8Array(sig);
-}
-
-async function issueSessionJwt(input: {
-  supabaseAccessToken: string;
-  payload: AccessTokenPayload;
-  activeTenantId: string | null;
-  activeTenantRole: string | null;
-}): Promise<string> {
-  const signingSecret = process.env.USER_JWT_SECRET;
-  if (!signingSecret || !input.payload.sub) {
-    return input.supabaseAccessToken;
-  }
-
-  const now = Math.floor(Date.now() / 1000);
-  const exp = input.payload.exp ?? now + 3600;
-  const iat = input.payload.iat ?? now;
-  const issuer =
-    process.env.USER_JWT_ISSUER ||
-    `${(process.env.SUPABASE_URL || "").replace(/\/$/, "")}/auth/v1`;
-  const audience = process.env.USER_JWT_AUDIENCE || "authenticated";
-
-  const claims = {
-    sub: input.payload.sub,
-    email: input.payload.email,
-    aud: audience,
-    iss: issuer,
-    exp,
-    iat,
-    active_tenant_id: input.activeTenantId,
-    app_metadata: input.activeTenantId
-      ? {
-          tenant_id: input.activeTenantId,
-          role: input.activeTenantRole || "member",
-        }
-      : {},
-    user_metadata: {},
-  };
-
-  const header = { alg: "HS256", typ: "JWT" } as const;
-  const signingInput = `${base64UrlEncodeJSON(header)}.${base64UrlEncodeJSON(claims)}`;
-  const signature = await hmacSha256(signingSecret, signingInput);
-  return `${signingInput}.${base64UrlEncode(signature)}`;
-}
+// Tier 3.2 (2026-05-17): the wrapped HS256 session JWT was retired. Every
+// product backend now verifies the raw Supabase ES256 JWT directly via the
+// Supabase JWKS and resolves the active tenant from the `X-Active-Tenant`
+// request header. `/api/session` returns the raw Supabase access_token
+// unmodified — the former `issueSessionJwt` re-signer and its HS256 /
+// base64url helpers are gone.
 
 async function buildSessionFromRefreshToken(
   refreshToken: string,
@@ -218,17 +154,10 @@ async function buildSessionFromRefreshToken(
     }
   }
 
-  const activeTenantRole =
-    tenants.find((tenant) => tenant.id === activeTenantId)?.role ?? null;
-  const accessToken = await issueSessionJwt({
-    supabaseAccessToken: data.access_token,
-    payload: payload ?? {},
-    activeTenantId,
-    activeTenantRole,
-  });
-
   return {
-    access_token: accessToken,
+    // Tier 3.2: the raw Supabase access_token, unmodified — products
+    // verify it directly via the Supabase JWKS.
+    access_token: data.access_token,
     refresh_token: data.refresh_token,
     expires_in: data.expires_in,
     tenants,
